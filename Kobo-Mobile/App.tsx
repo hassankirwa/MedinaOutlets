@@ -1,8 +1,10 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 import { useFonts } from "expo-font";
+import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, BackHandler, StyleSheet, View } from "react-native";
+import { Alert, BackHandler, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { apiCreateOutlet, apiForgotPassword, apiMyWardAssignments } from "./src/api/client";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
@@ -50,6 +52,9 @@ import { isOutletDraftDirty } from "./src/utils/isOutletDraftDirty";
 import { randomClientSubmissionKey } from "./src/utils/randomClientSubmissionKey";
 import { NewOutletLeaveModal } from "./src/components/NewOutletLeaveModal";
 import { MyDraftsScreen } from "./src/screens/MyDraftsScreen";
+import { BootSplashScreen } from "./src/components/BootSplashScreen";
+import { getOnboardingDoneStorageKey } from "./src/constants/onboardingStorage";
+import { OnboardingScreen } from "./src/screens/OnboardingScreen";
 
 type AppScreen =
   | "login"
@@ -67,6 +72,8 @@ type AppScreen =
   | "mySubmissions"
   | "submissionDetails"
   | "profile";
+
+void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function AppContent() {
   const { ready, user, token, signIn, signOut, refreshUser } = useAuth();
@@ -94,6 +101,50 @@ function AppContent() {
   const [leaveSaving, setLeaveSaving] = useState(false);
   const pendingLeaveRef = useRef<(() => void) | null>(null);
   const [resumeIncompleteDraftId, setResumeIncompleteDraftId] = useState<string | null>(null);
+  const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
+  /** Invalidates in-flight AsyncStorage reads so a slow `getItem` cannot overwrite state after "Get Started". */
+  const onboardingHydrateSeq = useRef(0);
+
+  useEffect(() => {
+    if (!ready) {
+      return;
+    }
+    if (user) {
+      setHasSeenOnboarding(true);
+      return;
+    }
+    const seq = ++onboardingHydrateSeq.current;
+    const key = getOnboardingDoneStorageKey();
+    void AsyncStorage.getItem(key)
+      .then((v) => {
+        if (seq !== onboardingHydrateSeq.current) {
+          return;
+        }
+        setHasSeenOnboarding(v === "1");
+      })
+      .catch(() => {
+        if (seq !== onboardingHydrateSeq.current) {
+          return;
+        }
+        setHasSeenOnboarding(false);
+      });
+  }, [ready, user]);
+
+  const completeOnboarding = useCallback(async () => {
+    onboardingHydrateSeq.current += 1;
+    try {
+      await AsyncStorage.setItem(getOnboardingDoneStorageKey(), "1");
+    } catch {
+      // Still open login; user can use the app. Storage may retry on next launch.
+    }
+    setHasSeenOnboarding(true);
+    setScreen("login");
+  }, []);
+
+  const devRepeatOnboarding = useCallback(async () => {
+    await AsyncStorage.removeItem(getOnboardingDoneStorageKey());
+    setHasSeenOnboarding(false);
+  }, []);
 
   /** Restore session → dashboard; do not reset when navigating e.g. to Projects. */
   useEffect(() => {
@@ -431,22 +482,21 @@ function AppContent() {
     }
   }, [token, user, draft, addSubmitted, resetDraft, queueOfflineOutlet, resumeIncompleteDraftId]);
 
-  if (!ready) {
-    return (
-      <View style={styles.boot}>
-        <ActivityIndicator size="large" color="#0F9445" />
-      </View>
-    );
+  if (!ready || hasSeenOnboarding === null) {
+    return <BootSplashScreen fontsLoaded />;
   }
 
+  const showOnboarding = !user && !hasSeenOnboarding;
   const isLoggedIn = screen !== "login" && screen !== "forgotPassword";
 
   return (
     <SafeAreaProvider>
       <FieldWorkerNavProvider value={fieldWorkerNav}>
       <SafeAreaView style={styles.root} edges={["left", "right"]}>
-        <StatusBar style={isLoggedIn ? "dark" : "light"} />
-        {screen === "login" ? (
+        <StatusBar style={isLoggedIn ? "dark" : showOnboarding ? "dark" : "light"} />
+        {showOnboarding ? (
+          <OnboardingScreen onComplete={completeOnboarding} />
+        ) : screen === "login" ? (
           <LoginScreen
             onSubmit={handleLogin}
             onForgotPassword={() => {
@@ -456,6 +506,7 @@ function AppContent() {
             }}
             loading={loginLoading}
             error={loginError}
+            onDevShowOnboarding={__DEV__ ? () => void devRepeatOnboarding() : undefined}
           />
         ) : screen === "forgotPassword" ? (
           <ForgotPasswordScreen
@@ -606,12 +657,14 @@ export default function App() {
     PlusJakartaSans_800ExtraBold,
   });
 
+  useEffect(() => {
+    if (fontsLoaded) {
+      void SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
   if (!fontsLoaded) {
-    return (
-      <View style={styles.boot}>
-        <ActivityIndicator size="large" color="#0F9445" />
-      </View>
-    );
+    return <BootSplashScreen fontsLoaded={false} />;
   }
 
   return (
@@ -625,5 +678,4 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#FFFFFF" },
-  boot: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFF" },
 });

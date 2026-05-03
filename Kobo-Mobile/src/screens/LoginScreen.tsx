@@ -22,11 +22,14 @@ export function LoginScreen({
   onForgotPassword,
   loading = false,
   error = null,
+  onDevShowOnboarding,
 }: {
   onSubmit: (email: string, password: string) => Promise<void>;
   onForgotPassword?: () => void;
   loading?: boolean;
   error?: string | null;
+  /** Dev-only: reopen intro slides (Expo Go / dev builds). */
+  onDevShowOnboarding?: () => void;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -122,6 +125,12 @@ export function LoginScreen({
           </Pressable>
 
           <Text style={styles.secureText}>Secure. Reliable. Everywhere.</Text>
+
+          {onDevShowOnboarding ? (
+            <Pressable onPress={onDevShowOnboarding} style={styles.devOnboardingBtn}>
+              <Text style={styles.devOnboardingText}>Show onboarding (dev)</Text>
+            </Pressable>
+          ) : null}
         </View>
       </View>
       <View style={styles.bottomWave} />
@@ -208,6 +217,13 @@ const styles = StyleSheet.create({
   signInBtnDisabled: { backgroundColor: "#8DCFA9" },
   signInText: { color: "#FFFFFF", fontSize: 17, fontFamily: font.bold },
   secureText: { marginTop: 12, textAlign: "center", color: "#4B5563", fontFamily: font.semiBold },
+  devOnboardingBtn: { marginTop: 14, alignSelf: "center", paddingVertical: 6, paddingHorizontal: 10 },
+  devOnboardingText: {
+    fontSize: 12,
+    fontFamily: font.medium,
+    color: "#64748B",
+    textDecorationLine: "underline",
+  },
   bottomWave: {
     position: "absolute",
     left: -10,
