@@ -1,0 +1,46 @@
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1920" y2="1080" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B3A4B"/>
+      <stop offset="1" stop-color="#0E6B62"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(420 260) rotate(90) scale(420)">
+      <stop stop-color="#56D4B6" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#56D4B6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1520 800) rotate(90) scale(520)">
+      <stop stop-color="#7BE3C8" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#7BE3C8" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="44" height="44" patternUnits="userSpaceOnUse">
+      <path d="M44 0H0V44" stroke="white" stroke-opacity="0.08"/>
+    </pattern>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <rect width="1920" height="1080" fill="url(#grid)"/>
+  <rect width="1920" height="1080" fill="url(#glowA)"/>
+  <rect width="1920" height="1080" fill="url(#glowB)"/>
+
+  <g stroke="white" stroke-opacity="0.2" stroke-width="2">
+    <circle cx="300" cy="760" r="90"/>
+    <circle cx="300" cy="760" r="12" fill="white" fill-opacity="0.18"/>
+    <line x1="300" y1="670" x2="300" y2="850"/>
+    <line x1="210" y1="760" x2="390" y2="760"/>
+  </g>
+
+  <g stroke="white" stroke-opacity="0.16" stroke-width="2">
+    <circle cx="1460" cy="290" r="100"/>
+    <circle cx="1570" cy="360" r="52"/>
+    <circle cx="1370" cy="390" r="44"/>
+    <line x1="1520" y1="335" x2="1565" y2="357"/>
+    <line x1="1415" y1="340" x2="1378" y2="385"/>
+  </g>
+
+  <g opacity="0.18" stroke="white" stroke-width="3">
+    <path d="M860 160C920 160 980 220 980 280V360C980 420 1040 480 1100 480"/>
+    <path d="M810 200C750 200 690 260 690 320V400C690 460 630 520 570 520"/>
+  </g>
+
+  <rect x="0" y="0" width="1920" height="1080" fill="black" fill-opacity="0.2"/>
+</svg>

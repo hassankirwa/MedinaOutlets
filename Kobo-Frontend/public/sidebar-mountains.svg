@@ -1,0 +1,44 @@
+<svg width="1400" height="480" viewBox="0 0 1400 480" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0b2a44" stop-opacity="0"/>
+      <stop offset="1" stop-color="#071B2E" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="m1" x1="0" y1="120" x2="0" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F3A5C" stop-opacity="0.0"/>
+      <stop offset="1" stop-color="#0A2A44" stop-opacity="0.95"/>
+    </linearGradient>
+    <linearGradient id="m2" x1="0" y1="150" x2="0" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#184B6F" stop-opacity="0.0"/>
+      <stop offset="1" stop-color="#0A2840" stop-opacity="0.95"/>
+    </linearGradient>
+    <linearGradient id="m3" x1="0" y1="170" x2="0" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1B567E" stop-opacity="0.0"/>
+      <stop offset="1" stop-color="#092338" stop-opacity="0.95"/>
+    </linearGradient>
+    <filter id="blur" x="-20" y="-20" width="1440" height="520" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="1.6"/>
+    </filter>
+  </defs>
+
+  <rect width="1400" height="480" fill="url(#sky)"/>
+
+  <g filter="url(#blur)">
+    <path
+      d="M-40 420C120 360 240 280 350 250C460 220 560 310 660 290C760 270 820 180 930 190C1040 200 1110 280 1210 310C1310 340 1390 330 1450 320V520H-40V420Z"
+      fill="url(#m1)"
+    />
+    <path
+      d="M-60 450C120 410 240 330 360 320C480 310 560 370 680 360C800 350 840 280 960 290C1080 300 1160 360 1260 390C1360 420 1440 410 1500 400V520H-60V450Z"
+      fill="url(#m2)"
+      opacity="0.95"
+    />
+    <path
+      d="M-70 470C140 450 260 410 390 402C520 395 610 432 740 425C870 418 940 372 1060 380C1180 388 1260 425 1360 446C1460 468 1540 460 1600 452V520H-70V470Z"
+      fill="url(#m3)"
+      opacity="0.95"
+    />
+  </g>
+
+  <rect y="380" width="1400" height="120" fill="black" fill-opacity="0.25"/>
+</svg>
