@@ -1,0 +1,21 @@
+Kobo stack — API base URL for local Laravel (php artisan serve defaults to http://127.0.0.1:8000)
+
+Kobo-Frontend (Next.js)
+  Set NEXT_PUBLIC_API_URL in .env.local to your Laravel origin.
+
+Kobo-Mobile (Expo)
+  Set EXPO_PUBLIC_API_URL in app.config.js (extra) or .env as supported by your Expo setup.
+
+  - Web / same machine: http://127.0.0.1:8000
+  - Android emulator: http://10.0.2.2:8000
+  - iOS simulator: http://127.0.0.1:8000
+  - Physical device: http://<your-PC-LAN-IP>:8000 (PC and phone on same Wi-Fi; allow port 8000 in Windows Firewall)
+
+Sanctum: both apps use Authorization: Bearer <token> from POST /api/auth/login.
+
+Demo seed users (after php artisan migrate:fresh --seed):
+  demo@outlet.com / password123 (company admin)
+  collector@outlet.com / password123 (field collector)
+  jane@outlet.com / password123 (second field collector — demo worker stats)
+
+Re-seed demo outlets only: php artisan db:seed --force
