@@ -7,17 +7,20 @@ use App\Http\Resources\OutletResource;
 use App\Models\Outlet;
 use App\Models\ProjectWardAssignment;
 use App\Models\User;
-use Illuminate\Http\UploadedFile;
 use App\Notifications\NewOutletSubmissionNotification;
 use App\Notifications\OutletRejectedNotification;
 use App\Services\NotificationRecipientResolver;
+use App\Support\DuplicateOutletSubmissionGuard;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\Response;
 
 class OutletController extends Controller
 {
@@ -100,7 +103,7 @@ class OutletController extends Controller
     /**
      * Stream a stored outlet photo; requires permission to view the outlet (RBAC).
      */
-    public function photo(Outlet $outlet, int $index): \Symfony\Component\HttpFoundation\Response
+    public function photo(Outlet $outlet, int $index): Response
     {
         $this->authorize('view', $outlet);
 
@@ -205,6 +208,13 @@ class OutletController extends Controller
                 return (new OutletResource($existing))->response()->setStatusCode(200);
             }
         }
+
+        DuplicateOutletSubmissionGuard::assertNotDuplicate(
+            $user,
+            $data['facility_name'],
+            (float) $data['latitude'],
+            (float) $data['longitude'],
+        );
 
         try {
             $outlet = Outlet::query()->create([
@@ -316,6 +326,64 @@ class OutletController extends Controller
         }
 
         return (new OutletResource($outlet))->response();
+    }
+
+    /**
+     * Apply the same status review rules as {@see update()} to many outlets at once (company scope enforced per row).
+     */
+    public function bulkUpdateStatus(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'outlet_ids' => ['required', 'array', 'min:1', 'max:500'],
+            'outlet_ids.*' => ['integer', 'exists:outlets,id'],
+            'status' => ['required', Rule::in(['pending', 'approved', 'rejected'])],
+        ]);
+
+        /** @var User $user */
+        $user = $request->user();
+        $user->loadMissing('role');
+
+        $ids = array_values(array_unique(array_map(intval(...), $data['outlet_ids'])));
+        $status = $data['status'];
+
+        $outlets = Outlet::query()->whereIn('id', $ids)->get();
+
+        if ($outlets->count() !== count($ids)) {
+            abort(422, __('One or more outlets are invalid.'));
+        }
+
+        foreach ($outlets as $outlet) {
+            $this->authorize('update', $outlet);
+        }
+
+        $resolver = app(NotificationRecipientResolver::class);
+
+        DB::transaction(function () use ($outlets, $status, $resolver): void {
+            foreach ($outlets as $outlet) {
+                $previousStatus = $outlet->status;
+                $outlet->update(['status' => $status]);
+
+                if (
+                    $status === 'rejected'
+                    && $previousStatus !== 'rejected'
+                    && $outlet->company
+                ) {
+                    $outlet->refresh();
+                    $outlet->load(['creator', 'ward', 'company']);
+                    foreach ($resolver->recipientsPreferring($outlet->company, 'rejected_submission') as $recipient) {
+                        $recipient->notify(new OutletRejectedNotification($outlet));
+                    }
+                }
+            }
+        });
+
+        $updated = Outlet::query()
+            ->whereIn('id', $ids)
+            ->with(['creator', 'ward', 'company'])
+            ->orderByDesc('created_at')
+            ->get();
+
+        return OutletResource::collection($updated)->response();
     }
 
     private function inferOutletType(string $category, string $accountType): string

@@ -274,6 +274,96 @@ export async function updateOutletStatus(
   throw new Error("Unexpected update response");
 }
 
+export async function bulkUpdateOutletStatuses(
+  outletIds: (string | number)[],
+  status: OutletReviewStatus,
+): Promise<ApiOutletRow[]> {
+  const res = await apiFetch("/api/outlets/bulk-status", {
+    method: "PATCH",
+    body: JSON.stringify({
+      outlet_ids: outletIds.map((id) => Number(id)),
+      status,
+    }),
+  });
+  const data = await readJsonResponse<{ data?: ApiOutletRow[] }>(res, "Failed to bulk update outlets");
+  if (typeof data === "object" && data !== null && Array.isArray(data.data)) {
+    return data.data;
+  }
+  return [];
+}
+
+export type OutletImportResult = {
+  imported: number;
+  errors: { row: number; messages: string[] }[];
+};
+
+function parseContentDispositionFilename(header: string | null): string | null {
+  if (!header) {
+    return null;
+  }
+  const star = /filename\*=(?:UTF-8'')?([^;\s]+)/i.exec(header);
+  if (star?.[1]) {
+    try {
+      return decodeURIComponent(star[1].replace(/^"+|"+$/g, ""));
+    } catch {
+      return star[1];
+    }
+  }
+  const quoted = /filename="([^"]+)"/i.exec(header);
+  if (quoted?.[1]) {
+    return quoted[1];
+  }
+  const plain = /filename=([^;\s]+)/i.exec(header);
+  if (plain?.[1]) {
+    return plain[1].replace(/^["']|["']$/g, "");
+  }
+  return null;
+}
+
+export async function downloadOutletSpreadsheetBlob(
+  pathWithQuery: string,
+  filename: string,
+): Promise<void> {
+  const res = await apiFetch(pathWithQuery, {
+    headers: { Accept: "*/*" },
+  });
+  if (!res.ok) {
+    let msg = `Download failed (${res.status})`;
+    try {
+      const parsed: unknown = JSON.parse(await res.text());
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        "message" in parsed &&
+        typeof (parsed as { message: unknown }).message === "string"
+      ) {
+        msg = (parsed as { message: string }).message;
+      }
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download =
+    parseContentDispositionFilename(res.headers.get("Content-Disposition")) ?? filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function importOutletsSpreadsheet(file: File): Promise<OutletImportResult> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await apiFetch("/api/outlets/spreadsheet/import", {
+    method: "POST",
+    body: fd,
+  });
+  return readJsonResponse<OutletImportResult>(res, "Import failed");
+}
+
 export type ProjectsSummary = {
   total_projects: number;
   active_projects: number;

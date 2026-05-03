@@ -6,27 +6,31 @@ import {
   BadgeCheck,
   Calendar,
   CheckCircle2,
+  ChevronDown,
   CircleDot,
   Eye,
   FileText,
-  FileDown,
   FileSpreadsheet,
+  FileDown,
   Filter,
   Hospital,
   Leaf,
+  Loader2,
   Menu,
   Phone,
   Search,
   ShoppingBag,
   Stethoscope,
-  UserRound,
+  Upload,
   XCircle,
-  Loader2,
 } from "lucide-react";
 import { AdminShell } from "../dashboard/_components/AdminShell";
 import { NotificationBell } from "@/components/NotificationBell";
 import {
+  bulkUpdateOutletStatuses,
+  downloadOutletSpreadsheetBlob,
   fetchOutletsApi,
+  importOutletsSpreadsheet,
   updateOutletStatus,
   canReviewOutletSubmissions,
   readUserProfile,
@@ -240,33 +244,47 @@ export default function SubmissionsPage() {
   const [search, setSearch] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<"all" | ReviewDisplay>("all");
   const [updatingId, setUpdatingId] = React.useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [bulkAction, setBulkAction] = React.useState<"" | OutletReviewStatus>("");
+  const [bulkBusy, setBulkBusy] = React.useState(false);
+  const [importMenuOpen, setImportMenuOpen] = React.useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = React.useState(false);
+  const [importBusy, setImportBusy] = React.useState(false);
+  const headerSelectRef = React.useRef<HTMLInputElement>(null);
+  const headerActionsRef = React.useRef<HTMLDivElement>(null);
+  const csvImportInputRef = React.useRef<HTMLInputElement>(null);
+  const xlsxImportInputRef = React.useRef<HTMLInputElement>(null);
 
   const profile = readUserProfile();
   const canReview = canReviewOutletSubmissions(profile?.role?.slug);
+  const canImport = canReview;
+
+  const loadSubmissions = React.useCallback(async () => {
+    setLoadState("loading");
+    setLoadError(null);
+    try {
+      const raw = await fetchOutletsApi();
+      setRows(raw.map(apiRowToSubmission));
+      setLoadState("ok");
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Failed to load submissions");
+      setLoadState("error");
+    }
+  }, []);
 
   React.useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      setLoadState("loading");
-      setLoadError(null);
-      try {
-        const raw = await fetchOutletsApi();
-        if (cancelled) {
-          return;
-        }
-        setRows(raw.map(apiRowToSubmission));
-        setLoadState("ok");
-      } catch (e) {
-        if (cancelled) {
-          return;
-        }
-        setLoadError(e instanceof Error ? e.message : "Failed to load submissions");
-        setLoadState("error");
+    void loadSubmissions();
+  }, [loadSubmissions]);
+
+  React.useEffect(() => {
+    function onDocMouseDown(e: MouseEvent) {
+      if (!headerActionsRef.current?.contains(e.target as Node)) {
+        setImportMenuOpen(false);
+        setExportMenuOpen(false);
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, []);
 
   const filtered = React.useMemo(() => {
@@ -287,6 +305,73 @@ export default function SubmissionsPage() {
       );
     });
   }, [rows, search, statusFilter]);
+
+  React.useEffect(() => {
+    setSelectedIds(new Set());
+    setBulkAction("");
+  }, [search, statusFilter]);
+
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every((r) => selectedIds.has(r.id));
+  const someFilteredSelected = filtered.some((r) => selectedIds.has(r.id));
+
+  React.useEffect(() => {
+    const el = headerSelectRef.current;
+    if (el) {
+      el.indeterminate = someFilteredSelected && !allFilteredSelected;
+    }
+  }, [someFilteredSelected, allFilteredSelected]);
+
+  const toggleAllFiltered = () => {
+    if (allFilteredSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filtered.forEach((r) => next.delete(r.id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filtered.forEach((r) => next.add(r.id));
+        return next;
+      });
+    }
+  };
+
+  const toggleRowSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  async function handleBulkApply() {
+    if (!canReview || !bulkAction || selectedIds.size === 0) {
+      return;
+    }
+    setBulkBusy(true);
+    try {
+      const updated = await bulkUpdateOutletStatuses([...selectedIds], bulkAction);
+      const map = new Map(updated.map((row) => [String(row.id), row]));
+      setRows((prev) =>
+        prev.map((row) => {
+          const u = map.get(row.id);
+          return u ? apiRowToSubmission(u) : row;
+        }),
+      );
+      setSelectedIds(new Set());
+      setBulkAction("");
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Bulk update failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
 
   const stats = React.useMemo(() => {
     const total = rows.length;
@@ -312,6 +397,32 @@ export default function SubmissionsPage() {
     }
   }
 
+  async function handleImportFile(file: File) {
+    setImportBusy(true);
+    setImportMenuOpen(false);
+    try {
+      const result = await importOutletsSpreadsheet(file);
+      await loadSubmissions();
+      let msg = `Imported ${result.imported} row(s).`;
+      if (result.errors.length > 0) {
+        msg += `\n\n${result.errors.length} row(s) failed.`;
+        const detail = result.errors
+          .slice(0, 8)
+          .map((e) => `Row ${e.row}: ${e.messages.join("; ")}`)
+          .join("\n");
+        msg += `\n\n${detail}`;
+        if (result.errors.length > 8) {
+          msg += "\n…";
+        }
+      }
+      window.alert(msg);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
   return (
     <AdminShell>
       {({ toggleSidebar }) => (
@@ -332,24 +443,152 @@ export default function SubmissionsPage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <div ref={headerActionsRef} className="flex flex-wrap items-center gap-2 sm:justify-end">
               <div className="shrink-0">
                 <NotificationBell />
               </div>
-              <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-              >
-                <FileSpreadsheet size={15} />
-                Export XLSX
-              </button>
-              <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-[12px] font-semibold text-white shadow-sm hover:bg-emerald-700"
-              >
-                <FileDown size={15} />
-                Export CSV
-              </button>
+              {canImport ? (
+                <>
+                  <input
+                    ref={csvImportInputRef}
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (f) {
+                        void handleImportFile(f);
+                      }
+                    }}
+                  />
+                  <input
+                    ref={xlsxImportInputRef}
+                    type="file"
+                    accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (f) {
+                        void handleImportFile(f);
+                      }
+                    }}
+                  />
+                  <div className="relative">
+                    <button
+                      type="button"
+                      disabled={importBusy}
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        setImportMenuOpen((o) => !o);
+                      }}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      <Upload size={15} />
+                      Import
+                      <ChevronDown size={14} className="opacity-60" />
+                    </button>
+                    {importMenuOpen ? (
+                      <div className="absolute right-0 z-30 mt-1 min-w-[240px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                        <button
+                          type="button"
+                          className="block w-full px-3 py-2 text-left text-[12px] text-slate-700 hover:bg-slate-50"
+                          onClick={() => {
+                            void downloadOutletSpreadsheetBlob(
+                              "/api/outlets/spreadsheet/template?format=csv",
+                              "outlet-import-template.csv",
+                            );
+                            setImportMenuOpen(false);
+                          }}
+                        >
+                          Download template (CSV)
+                        </button>
+                        <button
+                          type="button"
+                          className="block w-full px-3 py-2 text-left text-[12px] text-slate-700 hover:bg-slate-50"
+                          onClick={() => {
+                            void downloadOutletSpreadsheetBlob(
+                              "/api/outlets/spreadsheet/template?format=xlsx",
+                              "outlet-import-template.xlsx",
+                            );
+                            setImportMenuOpen(false);
+                          }}
+                        >
+                          Download template (XLSX)
+                        </button>
+                        <div className="my-1 border-t border-slate-100" />
+                        <button
+                          type="button"
+                          className="block w-full px-3 py-2 text-left text-[12px] text-slate-700 hover:bg-slate-50"
+                          onClick={() => {
+                            csvImportInputRef.current?.click();
+                            setImportMenuOpen(false);
+                          }}
+                        >
+                          Import CSV…
+                        </button>
+                        <button
+                          type="button"
+                          className="block w-full px-3 py-2 text-left text-[12px] text-slate-700 hover:bg-slate-50"
+                          onClick={() => {
+                            xlsxImportInputRef.current?.click();
+                            setImportMenuOpen(false);
+                          }}
+                        >
+                          Import XLSX…
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </>
+              ) : null}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImportMenuOpen(false);
+                    setExportMenuOpen((o) => !o);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-[12px] font-semibold text-white shadow-sm hover:bg-emerald-700"
+                >
+                  <FileDown size={15} />
+                  Export
+                  <ChevronDown size={14} className="opacity-90" />
+                </button>
+                {exportMenuOpen ? (
+                  <div className="absolute right-0 z-30 mt-1 min-w-[200px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-slate-700 hover:bg-slate-50"
+                      onClick={() => {
+                        void downloadOutletSpreadsheetBlob(
+                          "/api/outlets/spreadsheet/export?format=csv",
+                          "outlets-export.csv",
+                        );
+                        setExportMenuOpen(false);
+                      }}
+                    >
+                      <FileSpreadsheet size={14} className="text-slate-400" />
+                      Export CSV
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-slate-700 hover:bg-slate-50"
+                      onClick={() => {
+                        void downloadOutletSpreadsheetBlob(
+                          "/api/outlets/spreadsheet/export?format=xlsx",
+                          "outlets-export.xlsx",
+                        );
+                        setExportMenuOpen(false);
+                      }}
+                    >
+                      <FileSpreadsheet size={14} className="text-slate-400" />
+                      Export XLSX
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </header>
 
@@ -434,10 +673,55 @@ export default function SubmissionsPage() {
               </button>
             </div>
 
+            {canReview && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+                <span className="text-[11px] text-slate-600">
+                  {selectedIds.size} selected
+                  {filtered.length > 0 ? ` · ${filtered.length} shown` : ""}
+                </span>
+                <label className="flex items-center gap-2 text-[11px] text-slate-600">
+                  <span className="sr-only">Bulk action</span>
+                  <select
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[12px] text-slate-800 outline-none"
+                    value={bulkAction}
+                    onChange={(e) => setBulkAction((e.target.value || "") as "" | OutletReviewStatus)}
+                    disabled={bulkBusy}
+                  >
+                    <option value="">Bulk actions…</option>
+                    <option value="approved">Approve selected</option>
+                    <option value="rejected">Reject selected</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  disabled={bulkBusy || selectedIds.size === 0 || !bulkAction}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => void handleBulkApply()}
+                >
+                  {bulkBusy ? <Loader2 size={14} className="animate-spin" /> : null}
+                  Apply
+                </button>
+              </div>
+            )}
+
             <div className="mt-4 overflow-x-auto rounded-xl border border-slate-100">
               <table className="min-w-[1280px] w-full text-xs">
                 <thead className="bg-slate-50 text-slate-500">
                   <tr>
+                    {canReview ? (
+                      <th className="w-10 border-b border-slate-100 px-2 py-3 text-left font-medium">
+                        <input
+                          ref={headerSelectRef}
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300"
+                          checked={allFilteredSelected}
+                          onChange={toggleAllFiltered}
+                          disabled={filtered.length === 0 || bulkBusy}
+                          title="Select all rows in this list"
+                          aria-label="Select all rows in this list"
+                        />
+                      </th>
+                    ) : null}
                     <th className="border-b border-slate-100 px-3 py-3 text-left font-medium whitespace-nowrap">
                       FACILITY NAME
                     </th>
@@ -457,14 +741,20 @@ export default function SubmissionsPage() {
                 <tbody>
                   {loadState === "loading" && (
                     <tr>
-                      <td colSpan={8} className="px-3 py-10 text-center text-sm text-slate-500">
+                      <td
+                        colSpan={canReview ? 9 : 8}
+                        className="px-3 py-10 text-center text-sm text-slate-500"
+                      >
                         Loading submissions…
                       </td>
                     </tr>
                   )}
                   {loadState === "ok" && filtered.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="px-3 py-10 text-center text-sm text-slate-500">
+                      <td
+                        colSpan={canReview ? 9 : 8}
+                        className="px-3 py-10 text-center text-sm text-slate-500"
+                      >
                         No submissions match your filters.
                       </td>
                     </tr>
@@ -472,6 +762,18 @@ export default function SubmissionsPage() {
                   {loadState === "ok" &&
                     filtered.map((row, rowIndex) => (
                       <tr key={row.id} className={rowIndex % 2 === 0 ? "bg-white" : "bg-slate-50/40"}>
+                        {canReview ? (
+                          <td className="border-b border-slate-100 px-2 py-2.5 align-top">
+                            <input
+                              type="checkbox"
+                              className="mt-1 h-4 w-4 rounded border-slate-300"
+                              checked={selectedIds.has(row.id)}
+                              onChange={() => toggleRowSelected(row.id)}
+                              disabled={bulkBusy}
+                              aria-label={`Select ${row.facilityName}`}
+                            />
+                          </td>
+                        ) : null}
                         <td className="border-b border-slate-100 px-3 py-2.5">
                           <div className="flex items-start gap-2.5">
                             <img

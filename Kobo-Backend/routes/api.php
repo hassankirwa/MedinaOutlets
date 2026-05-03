@@ -1,13 +1,14 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\CountyController;
 use App\Http\Controllers\Api\CompanyController;
+use App\Http\Controllers\Api\CountyController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\FieldWorkerController;
 use App\Http\Controllers\Api\NotificationFeedController;
 use App\Http\Controllers\Api\NotificationPreferenceController;
 use App\Http\Controllers\Api\OutletController;
+use App\Http\Controllers\Api\OutletSpreadsheetController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\SettingsPasswordController;
 use App\Http\Controllers\Api\WorkspaceSettingsController;
@@ -60,6 +61,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/notifications/read-all', [NotificationFeedController::class, 'markAllRead']);
 
     Route::get('/outlets', [OutletController::class, 'index']);
+    Route::get('/outlets/spreadsheet/template', [OutletSpreadsheetController::class, 'template']);
+    Route::get('/outlets/spreadsheet/export', [OutletSpreadsheetController::class, 'export']);
+    Route::post('/outlets/spreadsheet/import', [OutletSpreadsheetController::class, 'import']);
+    Route::patch('/outlets/bulk-status', [OutletController::class, 'bulkUpdateStatus']);
     Route::post('/outlets', [OutletController::class, 'store']);
     Route::get('/outlets/{outlet}/photos/{index}', [OutletController::class, 'photo'])
         ->whereNumber('index');
