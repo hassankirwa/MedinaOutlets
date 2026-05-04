@@ -16,7 +16,6 @@ import {
   X,
 } from "lucide-react";
 import { logoutRequest, readUserProfile, type AuthUser } from "@/lib/api";
-import { NotificationBell } from "@/components/NotificationBell";
 
 type SidebarItem = {
   icon: React.ElementType;
@@ -130,31 +129,21 @@ export function AdminSidebar({
         <div
           className={[
             "mb-8 flex items-center",
-            isOpen ? "justify-between gap-3" : "justify-center",
+            isOpen ? "gap-3" : "justify-center",
           ].join(" ")}
         >
-          <div className={["flex items-center", isOpen ? "gap-3" : ""].join(" ")}>
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500/95">
-              <Store size={22} />
-            </div>
-            <div className={["leading-tight", isOpen ? "block" : "hidden"].join(" ")}>
-              <div className="text-[14px] font-bold tracking-wide">
-                OUTLET <span className="text-emerald-300">CENSUS</span>
-              </div>
-              <div className="text-[11px] text-slate-200/80">
-                Track. Collect. Map. Empower.
-              </div>
-            </div>
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500/95">
+            <Store size={22} />
           </div>
-          <div className={isOpen ? "shrink-0 [&_button]:border-white/20 [&_button]:bg-white/10 [&_button]:text-white [&_button:hover]:bg-white/15 [&_span]:text-white" : "hidden"}>
-            <NotificationBell />
+          <div className={["leading-tight", isOpen ? "block" : "hidden"].join(" ")}>
+            <div className="text-[14px] font-bold tracking-wide">
+              OUTLET <span className="text-emerald-300">CENSUS</span>
+            </div>
+            <div className="text-[11px] text-slate-200/80">
+              Track. Collect. Map. Empower.
+            </div>
           </div>
         </div>
-        {!isOpen ? (
-          <div className="mb-4 flex justify-center [&_button]:border-white/20 [&_button]:bg-white/10 [&_button]:text-white [&_button:hover]:bg-white/15 [&_span]:text-white">
-            <NotificationBell />
-          </div>
-        ) : null}
 
         <nav className="space-y-1">
           {items.map((it) => {

@@ -67,7 +67,7 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void | Prom
         <View style={styles.slide1Root}>
           <View style={styles.slide1Header}>
             <Image
-              source={require("../../assets/onboarding/slide1-hero-icon.png")}
+              source={require("../../assets/onboarding/slide1-hero-icon.jpg")}
               style={styles.slide1HeroIcon}
               contentFit="contain"
             />
@@ -79,7 +79,7 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void | Prom
           </View>
           <View style={styles.slide1BottomWrap}>
             <Image
-              source={require("../../assets/onboarding/slide1-bottom-illustration.png")}
+              source={require("../../assets/onboarding/slide1-bottom-illustration.jpg")}
               style={styles.slide1BottomImage}
               contentFit="cover"
               contentPosition="bottom center"
@@ -95,7 +95,7 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void | Prom
         <View style={styles.slide2Root}>
           <View style={styles.slide2CenterBlock}>
             <Image
-              source={require("../../assets/onboarding/slide2-hero.png")}
+              source={require("../../assets/onboarding/slide2-hero.jpg")}
               style={styles.slide2HeroImage}
               contentFit="contain"
             />
@@ -114,7 +114,7 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void | Prom
         <View style={styles.slide2Root}>
           <View style={styles.slide2CenterBlock}>
             <Image
-              source={require("../../assets/onboarding/slide3-hero.png")}
+              source={require("../../assets/onboarding/slide3-hero.jpg")}
               style={styles.slide3HeroImage}
               contentFit="contain"
             />

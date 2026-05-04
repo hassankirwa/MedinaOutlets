@@ -1,5 +1,6 @@
 import Constants from "expo-constants";
 import type { NewOutletDraft } from "../domain/newOutletTypes";
+import { compressDraftPhotosForOutletUpload } from "../utils/compressOutletPhotoForUpload";
 
 const TOKEN_KEY = "kobo_auth_token";
 
@@ -183,8 +184,14 @@ export function draftToOutletPayload(draft: NewOutletDraft): Record<string, unkn
 
 function parseOutletCreateResponse(res: Response, raw: unknown): CreatedOutlet {
   if (!res.ok) {
-    const err = raw as unknown as { message?: string };
-    throw new Error(typeof err?.message === "string" ? err.message : "Could not submit outlet");
+    if (res.status === 413) {
+      throw new Error(
+        errorMessageFromBody(raw, "") ||
+          "Upload too large for the server. Fewer or smaller photos may work, or the server upload limit needs to be increased.",
+      );
+    }
+    const detail = errorMessageFromBody(raw, "");
+    throw new Error(detail || `Could not submit outlet (HTTP ${res.status})`);
   }
   const row =
     raw && typeof raw === "object" && "data" in raw && raw.data && typeof raw.data === "object"
@@ -213,7 +220,12 @@ function appendOutletPhotosToFormData(form: FormData, draft: NewOutletDraft): vo
   });
 }
 
-function appendOutletScalarsToFormData(form: FormData, draft: NewOutletDraft, clientSubmissionKey: string): void {
+function appendOutletScalarsToFormData(
+  form: FormData,
+  draft: NewOutletDraft,
+  clientSubmissionKey: string,
+  bearerToken: string,
+): void {
   const payload = draftToOutletPayload(draft);
   const { photos: _photos, ...scalars } = payload;
   for (const [key, value] of Object.entries(scalars)) {
@@ -223,6 +235,8 @@ function appendOutletScalarsToFormData(form: FormData, draft: NewOutletDraft, cl
     form.append(key, typeof value === "number" ? String(value) : String(value));
   }
   form.append("client_submission_key", clientSubmissionKey);
+  /** Android RN can drop Authorization on multipart; server reads api_bearer_token fallback. */
+  form.append("api_bearer_token", bearerToken);
 }
 
 export async function apiCreateOutlet(
@@ -252,8 +266,10 @@ export async function apiCreateOutlet(
   }
 
   const form = new FormData();
-  appendOutletScalarsToFormData(form, draft, clientSubmissionKey);
-  appendOutletPhotosToFormData(form, draft);
+  const draftForUpload =
+    draft.photos.length > 0 ? { ...draft, photos: await compressDraftPhotosForOutletUpload(draft.photos) } : draft;
+  appendOutletScalarsToFormData(form, draftForUpload, clientSubmissionKey, token);
+  appendOutletPhotosToFormData(form, draftForUpload);
 
   const res = await fetch(`${getApiBase()}/api/outlets`, {
     method: "POST",
@@ -290,6 +306,7 @@ export async function apiUploadProfileAvatar(token: string, localUri: string): P
     ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : ext === "heic" ? "image/heic" : "image/jpeg";
 
   const form = new FormData();
+  form.append("api_bearer_token", token);
   form.append("avatar", {
     uri: localUri,
     name: basename.includes(".") ? basename : `${basename}.jpg`,

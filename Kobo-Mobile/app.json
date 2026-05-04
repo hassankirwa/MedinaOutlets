@@ -1,7 +1,8 @@
 {
   "expo": {
-    "name": "Kobo-Mobile",
-    "slug": "Kobo-Mobile",
+    "name": "My Outlets",
+    "slug": "my-outlets",
+    "owner": "hassankirwa",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -16,6 +17,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "ke.co.dotcreative.myoutlets",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -34,6 +36,12 @@
           "photosPermission": "Allow $(PRODUCT_NAME) to choose your profile photo from your library."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "apiUrl": "https://outlets.dotcreative.co.ke",
+      "eas": {
+        "projectId": "59239d21-bc37-4868-9ad3-032e9e5c6dc4"
+      }
+    }
   }
 }

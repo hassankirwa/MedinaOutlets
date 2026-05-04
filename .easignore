@@ -1,0 +1,84 @@
+# https://expo.fyi/eas-build-archive
+#
+# EAS only reads .easignore from the GIT REPOSITORY ROOT (not from Kobo-Mobile/).
+# When this file exists, EAS does NOT use .gitignore — duplicate important rules here
+# so secrets and dependencies are not uploaded.
+
+.git/
+
+# --- Dependencies ---
+**/node_modules/
+**/vendor/
+
+# --- Env & secrets ---
+**/.env
+**/.env.*
+!**/.env.example
+**/auth.json
+**/*.pem
+**/*.p12
+**/*.jks
+**/*.mobileprovision
+
+# --- Root repo (see .gitignore) ---
+/downloaded_images/
+venv/
+.venv/
+
+# --- Expo / Kobo-Mobile ---
+**/.expo/
+**/.expo-shared/
+Kobo-Mobile/android/
+Kobo-Mobile/ios/
+**/web-build/
+**/.metro-health-check*
+
+# --- Next.js / Kobo-Frontend ---
+**/.next/
+**/out/
+**/.vercel/
+**/.pnp.*
+**/.yarn/*
+!**/.yarn/patches
+!**/.yarn/plugins
+!**/.yarn/releases
+!**/.yarn/versions
+
+# --- Laravel / Kobo-Backend ---
+Kobo-Backend/public/build/
+Kobo-Backend/public/hot
+Kobo-Backend/storage/*.key
+Kobo-Backend/storage/pail
+Kobo-Backend/bootstrap/cache/*
+**/Homestead.json
+**/Homestead.yaml
+**/.phpactor.json
+**/.phpunit.result.cache
+
+# --- Build output & caches (generic) ---
+**/dist/
+Kobo-Mobile/build/
+**/coverage/
+
+# --- IDE / OS ---
+**/.DS_Store
+Thumbs.db
+**/.idea/
+**/.vscode/
+**/.fleet/
+**/.nova/
+**/.phpunit.cache/
+
+# --- Logs & debug ---
+**/*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.pnpm-debug.log*
+
+# --- TypeScript ---
+**/*.tsbuildinfo
+
+# Faster uploads: uncomment if mobile EAS builds never need these siblings:
+Kobo-Backend/
+Kobo-Frontend/

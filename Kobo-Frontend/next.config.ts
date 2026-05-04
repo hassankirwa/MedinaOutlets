@@ -24,6 +24,11 @@ const nextConfig: NextConfig = {
         hostname: "picsum.photos",
       },
       {
+        protocol: "https",
+        hostname: "outlets.dotcreative.co.ke",
+        pathname: "/storage/**",
+      },
+      {
         protocol: "http",
         hostname: "127.0.0.1",
       },

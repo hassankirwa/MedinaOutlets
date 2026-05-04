@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 class OutletController extends Controller
 {
@@ -261,7 +262,11 @@ class OutletController extends Controller
         if ($outlet->company) {
             $resolver = app(NotificationRecipientResolver::class);
             foreach ($resolver->recipientsPreferring($outlet->company, 'new_submission') as $recipient) {
-                $recipient->notify(new NewOutletSubmissionNotification($outlet));
+                try {
+                    $recipient->notify(new NewOutletSubmissionNotification($outlet));
+                } catch (Throwable $e) {
+                    report($e);
+                }
             }
         }
 

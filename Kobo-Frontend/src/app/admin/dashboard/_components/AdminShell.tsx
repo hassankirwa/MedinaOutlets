@@ -32,7 +32,10 @@ export function AdminShell({
       return;
     }
     const mq = window.matchMedia("(min-width: 1024px)");
-    setIsSidebarOpen(mq.matches);
+    const sync = () => setIsSidebarOpen(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
   }, []);
 
   const value = React.useMemo(

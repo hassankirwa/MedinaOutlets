@@ -12,12 +12,14 @@ use App\Http\Controllers\Api\OutletSpreadsheetController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\SettingsPasswordController;
 use App\Http\Controllers\Api\WorkspaceSettingsController;
+use App\Http\Middleware\MergeMultipartBearerToken;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/auth/login', [AuthController::class, 'login']);
 Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword']);
+Route::post('/auth/reset-password', [AuthController::class, 'resetPassword']);
 
-Route::middleware('auth:sanctum')->group(function (): void {
+Route::middleware([MergeMultipartBearerToken::class, 'auth:sanctum'])->group(function (): void {
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
 

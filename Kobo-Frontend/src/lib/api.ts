@@ -78,6 +78,59 @@ export async function loginRequest(
   return data as LoginResponse;
 }
 
+export async function resetPasswordRequest(body: {
+  token: string;
+  email: string;
+  password: string;
+  password_confirmation: string;
+}): Promise<{ message: string }> {
+  const res = await fetch(`${getApiBase()}/api/auth/reset-password`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data: unknown = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    let message = "Unable to reset password";
+    if (typeof data === "object" && data !== null) {
+      if ("message" in data && typeof (data as { message: unknown }).message === "string") {
+        message = (data as { message: string }).message;
+      }
+      if (
+        "errors" in data &&
+        typeof (data as { errors: unknown }).errors === "object" &&
+        (data as { errors: Record<string, unknown> }).errors !== null
+      ) {
+        const errors = (data as { errors: Record<string, string[] | string> }).errors;
+        const firstKey = Object.keys(errors)[0];
+        const val = firstKey ? errors[firstKey] : undefined;
+        if (Array.isArray(val) && val[0]) {
+          message = val[0];
+        } else if (typeof val === "string") {
+          message = val;
+        }
+      }
+    }
+    throw new Error(message);
+  }
+
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    !("message" in data) ||
+    typeof (data as { message: unknown }).message !== "string"
+  ) {
+    throw new Error("Unexpected response from server");
+  }
+
+  return data as { message: string };
+}
+
 export function isFieldCollectorRole(slug: string | undefined): boolean {
   return slug === "field_collector";
 }
