@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   apiDashboardStats,
   apiListMyOutlets,
-  apiMyWardAssignments,
+  apiMobileBootstrap,
   type AuthUser,
   type DashboardStatsResponse,
   type MyWardAssignmentProject,
@@ -30,23 +30,13 @@ import {
 } from "../utils/fieldWorkerProjects";
 import type { OfflineOutletSyncRunResult } from "../sync/offlineOutletSyncTypes";
 import { outletListRowToSubmitted } from "../utils/outletApiMap";
+import { getSubmissionStatusLabel } from "../utils/submissionStatus";
+import { useNotificationUnreadCount } from "../hooks/useNotificationUnreadCount";
 
 const RECENT_ACTIVITY_COUNT = 3;
 
 function activityStatusLabel(item: SubmittedOutlet): string {
-  if (item.syncStatus === "pending") {
-    return "Waiting to sync";
-  }
-  switch (item.serverReviewStatus) {
-    case "approved":
-      return "Approved";
-    case "rejected":
-      return "Rejected";
-    case "pending":
-      return "Under review";
-    default:
-      return "Submitted";
-  }
+  return getSubmissionStatusLabel(item);
 }
 
 function formatRecentSubmitted(iso: string): string {
@@ -93,9 +83,16 @@ const quickActions: QuickAction[] = [
 const visibleQuickActions = quickActions.filter((item) => !QUICK_ACTIONS_HIDDEN_TITLES.has(item.title));
 
 function summarizeManualSyncAlert(result: Extract<OfflineOutletSyncRunResult, { outcome: "complete" }>): void {
-  const { syncedCount, stoppedForNetwork, pendingCountBefore } = result;
+  const { syncedCount, failedCount, stoppedForNetwork, pendingCountBefore } = result;
   if (pendingCountBefore === 0) {
     Alert.alert("Up to date", "All offline submissions are already synced with the server.");
+    return;
+  }
+  if (failedCount > 0 && syncedCount === 0) {
+    Alert.alert(
+      "Sync failed",
+      `${failedCount} submission${failedCount === 1 ? "" : "s"} could not be uploaded. Check the app for details.`,
+    );
     return;
   }
   if (syncedCount > 0 && !stoppedForNetwork) {
@@ -127,6 +124,7 @@ export function DashboardScreen({
   onOpenMySubmissions,
   onOpenMyDrafts,
   onOpenProjects,
+  onOpenNotifications,
   onManualSyncOfflineQueue,
 }: {
   token: string | null;
@@ -136,8 +134,10 @@ export function DashboardScreen({
   onOpenMySubmissions: () => void;
   onOpenMyDrafts: () => void;
   onOpenProjects: () => void;
+  onOpenNotifications: () => void;
   onManualSyncOfflineQueue: () => Promise<OfflineOutletSyncRunResult>;
 }) {
+  const { count: unreadNotifications } = useNotificationUnreadCount(token);
   const insets = useSafeAreaInsets();
   const { submittedOutlets } = useNewOutletDraft();
   const [assignments, setAssignments] = useState<MyWardAssignmentProject[]>([]);
@@ -157,9 +157,9 @@ export function DashboardScreen({
     let cancelled = false;
     void (async () => {
       try {
-        const rows = await apiMyWardAssignments(token);
+        const boot = await apiMobileBootstrap(token);
         if (!cancelled) {
-          setAssignments(sortAssignmentsForDisplay(rows));
+          setAssignments(sortAssignmentsForDisplay(boot.active_projects));
         }
       } catch {
         if (!cancelled) {
@@ -346,12 +346,18 @@ export function DashboardScreen({
           <Pressable style={styles.headerIconBtn} onPress={onLogout}>
             <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
           </Pressable>
-          <View style={styles.notificationWrap}>
-            <Ionicons name="notifications-outline" size={22} color="#FFFFFF" />
-            <View style={styles.notificationBadge}>
-              <Text style={styles.notificationBadgeText}>3</Text>
+          <Pressable style={styles.headerIconBtn} onPress={onOpenNotifications} hitSlop={8}>
+            <View style={styles.notificationWrap}>
+              <Ionicons name="notifications-outline" size={22} color="#FFFFFF" />
+              {unreadNotifications > 0 ? (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationBadgeText}>
+                    {unreadNotifications > 99 ? "99+" : String(unreadNotifications)}
+                  </Text>
+                </View>
+              ) : null}
             </View>
-          </View>
+          </Pressable>
         </View>
 
         <View style={styles.profileRow}>
@@ -379,14 +385,7 @@ export function DashboardScreen({
             ) : primaryProject ? (
               <>
                 <Text style={styles.projectTitle}>{primaryProject.name}</Text>
-                <Text style={styles.projectCounty}>{primaryProject.county} · status {primaryProject.status}</Text>
-                {primaryProject.wards.length > 0 ? (
-                  <Text style={styles.wardLine} numberOfLines={3}>
-                    Wards: {primaryProject.wards.map((w) => w.name).join(", ")}
-                  </Text>
-                ) : (
-                  <Text style={styles.projectCounty}>No wards assigned yet.</Text>
-                )}
+                <Text style={styles.projectCounty}>{primaryProject.branch ?? "No branch"} · status {primaryProject.status}</Text>
               </>
             ) : (
               <>

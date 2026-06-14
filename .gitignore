@@ -5,4 +5,14 @@ node_modules
 .env.test.local
 .env.production.local
 /downloaded_images
+/downloaded_images2
+/Download-artifacts
+/Download-results
+/Download-results2
+/KoboDocs
+/download_results.xlsx
+/download_results2.xlsx
+/brainstorm.md
+/deployment.md
+
 /venv

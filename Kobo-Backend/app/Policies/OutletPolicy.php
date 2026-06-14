@@ -57,4 +57,17 @@ class OutletPolicy
 
         return $outlet->company_id === $user->company_id;
     }
+
+    public function delete(User $user, Outlet $outlet): bool
+    {
+        if (! in_array($user->role?->slug, ['super_admin', 'company_admin', 'qa_officer'], true)) {
+            return false;
+        }
+
+        if ($user->role?->slug === 'super_admin') {
+            return true;
+        }
+
+        return $outlet->company_id === $user->company_id;
+    }
 }

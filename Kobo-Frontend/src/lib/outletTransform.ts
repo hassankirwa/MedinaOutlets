@@ -2,12 +2,31 @@ import type { OutletPoint, OutletType } from "@/components/maps/outlet-map-data"
 
 export type ApiOutletRow = {
   id: string;
+  project_id?: string | null;
+  branch_id?: string | null;
+  branch?: string;
+  county_id?: string | null;
+  county?: string;
+  ward?: string;
+  captured_address?: string | null;
+  road?: string | null;
+  suburb?: string | null;
+  captured_ward?: string | null;
+  captured_county?: string | null;
+  region?: string | null;
+  country?: string | null;
+  reverse_geocoded_address?: string | null;
+  gps_accuracy_meters?: number | null;
+  photos_count?: number;
   name: string;
   type: string;
   owner: string;
   phone: string;
   location: string;
   fieldWorker: string;
+  captured_place_name?: string | null;
+  has_gps?: boolean;
+  has_photos?: boolean;
   accountStatus: string;
   servicedByMedilab: string;
   submittedAt: string;
@@ -24,6 +43,7 @@ export type ApiOutletRow = {
     outlet_serviced_by_med?: string;
     selected_category?: string;
     landmark?: string;
+    physical_location?: string;
     remarks?: string;
   };
 };

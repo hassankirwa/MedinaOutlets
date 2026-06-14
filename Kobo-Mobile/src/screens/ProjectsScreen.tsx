@@ -2,7 +2,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { apiMyWardAssignments, type AuthUser, type MyWardAssignmentProject } from "../api/client";
+import { apiMobileBootstrap, type AuthUser, type MyWardAssignmentProject } from "../api/client";
 import { FieldWorkerBottomNav, type FieldWorkerNavTab } from "../components/FieldWorkerBottomNav";
 import { font } from "../theme/fonts";
 import {
@@ -37,8 +37,8 @@ export function ProjectsScreen({
     let cancelled = false;
     void (async () => {
       try {
-        const rows = await apiMyWardAssignments(token);
-        if (!cancelled) setProjects(sortAssignmentsForDisplay(rows));
+        const rows = await apiMobileBootstrap(token);
+        if (!cancelled) setProjects(sortAssignmentsForDisplay(rows.active_projects));
       } catch {
         if (!cancelled) setProjects([]);
       } finally {
@@ -63,7 +63,7 @@ export function ProjectsScreen({
           <Text style={styles.headerTitle}>Projects</Text>
           <Text style={styles.headerSubtitle}>
             {user?.role?.slug === "field_collector"
-              ? "Your county projects and assigned wards"
+              ? "Your assigned census projects"
               : "Assignments for field collectors"}
           </Text>
         </View>
@@ -81,8 +81,8 @@ export function ProjectsScreen({
             <Text style={styles.emptyTitle}>No projects assigned</Text>
             <Text style={styles.emptyMeta}>
               {user?.role?.slug === "field_collector"
-                ? "Ask your admin to assign wards to you under each county project."
-                : "Sign in as a field collector to see project and ward assignments."}
+                ? "Ask your admin to assign you to an active project."
+                : "Sign in as a field collector to see project assignments."}
             </Text>
           </View>
         ) : (
@@ -96,14 +96,14 @@ export function ProjectsScreen({
                   onPress={() => setExpandedProjectId(expanded ? null : p.id)}
                   accessibilityRole="button"
                   accessibilityState={{ expanded }}
-                  accessibilityHint="Shows or hides wards assigned to you on this project"
+                  accessibilityHint="Shows or hides project details"
                 >
                   <View style={styles.cardIconWrap}>
                     <MaterialCommunityIcons name="map-marker-radius" size={20} color="#FFFFFF" />
                   </View>
                   <View style={styles.cardHeaderText}>
                     <Text style={styles.projectName}>{p.name}</Text>
-                    <Text style={styles.countyLine}>{p.county}</Text>
+                    <Text style={styles.countyLine}>{p.branch ?? "No branch"}</Text>
                     <View style={styles.statusRow}>
                       <View style={[styles.statusPill, !canCollectHere && styles.statusPillMuted]}>
                         <Text style={[styles.statusPillText, !canCollectHere && styles.statusPillTextMuted]}>
@@ -114,8 +114,7 @@ export function ProjectsScreen({
                         <Text style={styles.closedHint}>Outlet collection closed</Text>
                       ) : (
                         <Text style={styles.openHint}>
-                          {p.wards.length} ward{p.wards.length === 1 ? "" : "s"} · tap to{" "}
-                          {expanded ? "hide" : "show"}
+                          Ready for collection · tap to {expanded ? "hide" : "show"}
                         </Text>
                       )}
                     </View>
@@ -124,19 +123,11 @@ export function ProjectsScreen({
                 </Pressable>
                 {expanded ? (
                   <View style={styles.wardsSection}>
-                    <Text style={styles.wardsHeading}>Wards assigned to you</Text>
-                    {p.wards.length === 0 ? (
-                      <Text style={styles.noWards}>
-                        No wards mapped yet. Your admin can assign wards under this project.
-                      </Text>
-                    ) : (
-                      p.wards.map((w) => (
-                        <View key={w.id} style={styles.wardRow}>
-                          <View style={styles.wardBullet} />
-                          <Text style={styles.wardName}>{w.name}</Text>
-                        </View>
-                      ))
-                    )}
+                    <Text style={styles.wardsHeading}>Project details</Text>
+                    <Text style={styles.wardName}>Branch: {p.branch ?? "—"}</Text>
+                    {p.questionnaire_name ? (
+                      <Text style={styles.wardName}>Questionnaire: {p.questionnaire_name}</Text>
+                    ) : null}
                   </View>
                 ) : null}
               </View>

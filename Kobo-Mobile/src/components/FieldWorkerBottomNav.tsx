@@ -3,6 +3,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFieldWorkerNavActions } from "../context/FieldWorkerNavContext";
 import { font } from "../theme/fonts";
+import { bottomSafeInset } from "../utils/safeAreaInsets";
 
 export type FieldWorkerNavTab = "home" | "projects" | "submissions" | "profile";
 
@@ -35,7 +36,7 @@ export function FieldWorkerBottomNav({
     requestNewOutlet();
   };
 
-  const safeBottom = Math.max(insets.bottom, 0);
+  const safeBottom = bottomSafeInset(insets);
 
   return (
     <View style={[styles.bottomNav, { paddingBottom: safeBottom }]}>

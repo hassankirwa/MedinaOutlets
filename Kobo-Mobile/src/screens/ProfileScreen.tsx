@@ -6,6 +6,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -17,11 +18,16 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   apiChangePassword,
+  apiFetchNotificationPreferences,
   apiMyWardAssignments,
+  apiUpdateNotificationPreferences,
   apiUploadProfileAvatar,
   type AuthUser,
+  type CollectorNotificationPreferences,
   type MyWardAssignmentProject,
 } from "../api/client";
+import { requestLocalNotificationPermissions } from "../notifications/registerPushToken";
+import { canUseDeviceNotifications } from "../notifications/expoNotificationsSupport";
 import { FieldWorkerBottomNav, type FieldWorkerNavTab } from "../components/FieldWorkerBottomNav";
 import { font } from "../theme/fonts";
 import {
@@ -86,6 +92,63 @@ export function ProfileScreen({ token, user, navActive, onBack, refreshUser }: P
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+
+  const [notifPrefs, setNotifPrefs] = useState<CollectorNotificationPreferences | null>(null);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [savingNotif, setSavingNotif] = useState(false);
+  const [localAlertsDenied, setLocalAlertsDenied] = useState(false);
+
+  useEffect(() => {
+    if (!token) {
+      setNotifPrefs(null);
+      return;
+    }
+    let cancelled = false;
+    setNotifLoading(true);
+    void (async () => {
+      try {
+        const prefs = await apiFetchNotificationPreferences(token);
+        if (!cancelled) {
+          setNotifPrefs(prefs);
+        }
+      } catch {
+        if (!cancelled) {
+          setNotifPrefs(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setNotifLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  const saveNotificationPrefs = useCallback(async () => {
+    if (!token || !notifPrefs) {
+      return;
+    }
+    setSavingNotif(true);
+    try {
+      const payload: CollectorNotificationPreferences = {
+        ...notifPrefs,
+        channels: { ...notifPrefs.channels, push: false },
+      };
+      const saved = await apiUpdateNotificationPreferences(token, payload);
+      setNotifPrefs(saved);
+      if (saved.sync_reminder !== false) {
+        const granted = await requestLocalNotificationPermissions();
+        setLocalAlertsDenied(!granted);
+      }
+      Alert.alert("Saved", "Notification preferences updated.");
+    } catch (e) {
+      Alert.alert("Notifications", e instanceof Error ? e.message : "Could not save settings");
+    } finally {
+      setSavingNotif(false);
+    }
+  }, [token, notifPrefs]);
 
   const displayAvatarUri = pickedPhotoUri ?? user?.avatar_url ?? null;
   const fallbackLetter =
@@ -210,6 +273,85 @@ export function ProfileScreen({ token, user, navActive, onBack, refreshUser }: P
             </Pressable>
           </View>
 
+          <Text style={styles.sectionLabel}>Notifications</Text>
+          <View style={styles.card}>
+            {notifLoading ? (
+              <ActivityIndicator color="#169447" />
+            ) : notifPrefs ? (
+              <>
+                <Text style={styles.notifIntro}>
+                  Review and assignment updates appear in the app.
+                  {canUseDeviceNotifications()
+                    ? " Sync reminders can alert on this device."
+                    : " On-device sync alerts need a development build on Android (Expo Go shows in-app only)."}
+                </Text>
+                <ToggleRow
+                  label="Submission review updates"
+                  value={notifPrefs.submission_review ?? true}
+                  onToggle={() =>
+                    setNotifPrefs({ ...notifPrefs, submission_review: !(notifPrefs.submission_review ?? true) })
+                  }
+                />
+                <ToggleRow
+                  label="Project assignments"
+                  value={notifPrefs.project_assignment ?? true}
+                  onToggle={() =>
+                    setNotifPrefs({
+                      ...notifPrefs,
+                      project_assignment: !(notifPrefs.project_assignment ?? true),
+                    })
+                  }
+                />
+                <ToggleRow
+                  label="Sync reminders on device"
+                  value={notifPrefs.sync_reminder ?? true}
+                  disabled={!canUseDeviceNotifications()}
+                  onToggle={async () => {
+                    if (!canUseDeviceNotifications()) {
+                      return;
+                    }
+                    const next = !(notifPrefs.sync_reminder ?? true);
+                    if (next) {
+                      const granted = await requestLocalNotificationPermissions();
+                      setLocalAlertsDenied(!granted);
+                    }
+                    setNotifPrefs({ ...notifPrefs, sync_reminder: next });
+                  }}
+                />
+                {localAlertsDenied ? (
+                  <Pressable onPress={() => void Linking.openSettings()}>
+                    <Text style={styles.permissionLink}>
+                      Device alerts are off. Open settings to allow sync reminders on this phone.
+                    </Text>
+                  </Pressable>
+                ) : null}
+                <ToggleRow
+                  label="In-app alerts"
+                  value={notifPrefs.channels?.in_app ?? true}
+                  onToggle={() =>
+                    setNotifPrefs({
+                      ...notifPrefs,
+                      channels: { ...notifPrefs.channels, in_app: !(notifPrefs.channels?.in_app ?? true) },
+                    })
+                  }
+                />
+                <Pressable
+                  style={[styles.primaryBtn, savingNotif && styles.btnDisabled]}
+                  onPress={() => void saveNotificationPrefs()}
+                  disabled={savingNotif}
+                >
+                  {savingNotif ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Save notifications</Text>
+                  )}
+                </Pressable>
+              </>
+            ) : (
+              <Text style={styles.hint}>Could not load notification settings.</Text>
+            )}
+          </View>
+
           <Text style={styles.sectionLabel}>Password</Text>
           <View style={styles.card}>
             <Text style={styles.fieldLabel}>Current password</Text>
@@ -286,6 +428,27 @@ export function ProfileScreen({ token, user, navActive, onBack, refreshUser }: P
   );
 }
 
+function ToggleRow({
+  label,
+  value,
+  onToggle,
+  disabled = false,
+}: {
+  label: string;
+  value: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable style={[styles.toggleRow, disabled && styles.toggleRowDisabled]} onPress={onToggle} disabled={disabled}>
+      <Text style={styles.toggleLabel}>{label}</Text>
+      <View style={[styles.toggleTrack, value && styles.toggleTrackOn]}>
+        <View style={[styles.toggleThumb, value && styles.toggleThumbOn]} />
+      </View>
+    </Pressable>
+  );
+}
+
 const AVATAR = 112;
 
 const styles = StyleSheet.create({
@@ -351,6 +514,42 @@ const styles = StyleSheet.create({
     borderColor: "#FFFFFF",
   },
   hint: { fontFamily: font.regular, fontSize: 13, color: "#64748B", textAlign: "center" },
+  notifIntro: {
+    fontFamily: font.regular,
+    fontSize: 13,
+    color: "#64748B",
+    lineHeight: 18,
+  },
+  permissionLink: {
+    fontFamily: font.semiBold,
+    fontSize: 12,
+    color: "#B45309",
+    textAlign: "center",
+  },
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 4,
+  },
+  toggleRowDisabled: { opacity: 0.45 },
+  toggleLabel: { flex: 1, fontFamily: font.regular, fontSize: 14, color: "#334155", paddingRight: 12 },
+  toggleTrack: {
+    width: 46,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#CBD5E1",
+    padding: 3,
+    justifyContent: "center",
+  },
+  toggleTrackOn: { backgroundColor: "#86EFAC" },
+  toggleThumb: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#FFFFFF",
+  },
+  toggleThumbOn: { alignSelf: "flex-end" },
   fieldLabel: { fontFamily: font.semiBold, fontSize: 13, color: "#334155" },
   inputRow: {
     flexDirection: "row",

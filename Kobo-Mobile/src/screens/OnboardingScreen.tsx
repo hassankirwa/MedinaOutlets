@@ -13,6 +13,7 @@ import {
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { font } from "../theme/fonts";
+import { bottomSafeInset } from "../utils/safeAreaInsets";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -143,7 +144,7 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void | Prom
   const footerBackground = COLORS.white;
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <View style={[styles.root, { paddingTop: insets.top, paddingBottom: bottomSafeInset(insets) }]}>
       <FlatList
         data={slides}
         style={styles.listFlex}

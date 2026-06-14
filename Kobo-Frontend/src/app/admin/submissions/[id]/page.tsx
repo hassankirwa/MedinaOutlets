@@ -6,55 +6,18 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  CheckCircle2,
-  CircleDot,
-  Loader2,
   MapPin,
   Menu,
   Phone,
   UserRound,
-  XCircle,
 } from "lucide-react";
 import { AdminShell } from "../../dashboard/_components/AdminShell";
 import {
   fetchOutletById,
-  updateOutletStatus,
-  canReviewOutletSubmissions,
-  readUserProfile,
-  type OutletReviewStatus,
 } from "@/lib/api";
 import { normalizeOutletType } from "@/lib/outletTransform";
 import type { ApiOutletRow } from "@/lib/outletTransform";
 import { outletMediaBypassNextOptimizer, resolveOutletMediaUrl } from "@/lib/mediaUrl";
-
-function reviewLabel(status: string | undefined): "Approved" | "Under review" | "Rejected" {
-  const s = (status ?? "pending").toLowerCase();
-  if (s === "approved") {
-    return "Approved";
-  }
-  if (s === "rejected") {
-    return "Rejected";
-  }
-  return "Under review";
-}
-
-function StatusBanner({ status }: { status: ReturnType<typeof reviewLabel> }) {
-  const styles =
-    status === "Approved"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-      : status === "Under review"
-        ? "border-amber-200 bg-amber-50 text-amber-900"
-        : "border-rose-200 bg-rose-50 text-rose-900";
-  const Icon =
-    status === "Approved" ? CheckCircle2 : status === "Under review" ? CircleDot : XCircle;
-
-  return (
-    <div className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-medium ${styles}`}>
-      <Icon size={18} />
-      Submission status: {status}
-    </div>
-  );
-}
 
 export default function SubmissionDetailPage() {
   const params = useParams<{ id: string }>();
@@ -63,10 +26,6 @@ export default function SubmissionDetailPage() {
   const [row, setRow] = React.useState<ApiOutletRow | null>(null);
   const [loadState, setLoadState] = React.useState<"loading" | "ok" | "error">("loading");
   const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [updating, setUpdating] = React.useState(false);
-
-  const profile = readUserProfile();
-  const canReview = canReviewOutletSubmissions(profile?.role?.slug);
 
   React.useEffect(() => {
     if (!rawId) {
@@ -102,23 +61,6 @@ export default function SubmissionDetailPage() {
     [row?.photo_urls],
   );
 
-  async function handleReview(status: OutletReviewStatus) {
-    if (!row) {
-      return;
-    }
-    setUpdating(true);
-    try {
-      const updated = await updateOutletStatus(row.id, status);
-      setRow(updated);
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Update failed");
-    } finally {
-      setUpdating(false);
-    }
-  }
-
-  const statusUi = reviewLabel(row?.status);
-
   return (
     <AdminShell>
       {({ toggleSidebar }) => (
@@ -147,36 +89,6 @@ export default function SubmissionDetailPage() {
                 <p className="text-xs text-slate-500">ID #{rawId}</p>
               </div>
             </div>
-
-            {canReview && row && (
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={updating || row.status === "approved"}
-                  onClick={() => void handleReview("approved")}
-                  className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  {updating ? <Loader2 size={14} className="animate-spin" /> : null}
-                  Approve
-                </button>
-                <button
-                  type="button"
-                  disabled={updating || row.status === "rejected"}
-                  onClick={() => void handleReview("rejected")}
-                  className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-50"
-                >
-                  Reject
-                </button>
-                <button
-                  type="button"
-                  disabled={updating || row.status === "pending"}
-                  onClick={() => void handleReview("pending")}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Mark under review
-                </button>
-              </div>
-            )}
           </header>
 
           {loadError && (
@@ -187,8 +99,6 @@ export default function SubmissionDetailPage() {
 
           {row && loadState === "ok" && (
             <div className="mt-6 space-y-6">
-              <StatusBanner status={statusUi} />
-
               <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                 <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm lg:col-span-2">
                   <h2 className="text-sm font-semibold text-slate-900">Facility</h2>

@@ -1,5 +1,7 @@
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Alert, KeyboardAvoidingView, Platform, StyleSheet, Text } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { NewOutletFormScreen } from "../components/NewOutletFormScreen";
 import { NewOutletInputField } from "../components/NewOutletFields";
 import { NewOutletFooterButtons } from "../components/NewOutletFooterButtons";
 import { NewOutletHeader } from "../components/NewOutletHeader";
@@ -10,29 +12,87 @@ import { font } from "../theme/fonts";
 export function NewOutletScreen2({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
   const insets = useSafeAreaInsets();
   const { draft, updateDraft } = useNewOutletDraft();
-  const { facilityName, ownerName, businessPhone, email } = draft;
-  const canGoNext = facilityName.trim().length > 1 && ownerName.trim().length > 1;
+  const {
+    facilityName,
+    ownerName,
+    businessPhone,
+    alternativePhone,
+    email,
+  } = draft;
+  const [businessPhoneError, setBusinessPhoneError] = useState(false);
+
+  const canGoNext =
+    facilityName.trim().length > 1 &&
+    ownerName.trim().length > 1 &&
+    businessPhone.trim().length > 0;
+
+  const handleNext = () => {
+    if (businessPhone.trim().length === 0) {
+      setBusinessPhoneError(true);
+      Alert.alert("Required field", "Business / Office Line is required.");
+      return;
+    }
+    setBusinessPhoneError(false);
+    onNext();
+  };
 
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
       <NewOutletHeader topInset={insets.top} onBack={onBack} />
       <NewOutletStepBar step={2} />
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <NewOutletFormScreen contentContainerStyle={styles.scroll}>
         <Text style={styles.title}>Outlet Identity</Text>
         <Text style={styles.subtitle}>Enter identity information.</Text>
-        <NewOutletInputField label="Facility Name" value={facilityName} onChangeText={(t) => updateDraft({ facilityName: t })} required />
-        <NewOutletInputField label="Owner / Director Name" value={ownerName} onChangeText={(t) => updateDraft({ ownerName: t })} required />
-        <NewOutletInputField label="Business / Office Line" value={businessPhone} onChangeText={(t) => updateDraft({ businessPhone: t })} keyboardType="phone-pad" />
-        <NewOutletInputField label="Email Address" value={email} onChangeText={(t) => updateDraft({ email: t })} keyboardType="email-address" />
-      </ScrollView>
-      <NewOutletFooterButtons onBack={onBack} onNext={onNext} nextDisabled={!canGoNext} />
-    </View>
+        <NewOutletInputField
+          label="Facility / Outlet Name"
+          value={facilityName}
+          onChangeText={(t) => updateDraft({ facilityName: t })}
+          required
+        />
+        <NewOutletInputField
+          label="Owner / Contact Person"
+          value={ownerName}
+          onChangeText={(t) => updateDraft({ ownerName: t })}
+          required
+        />
+        <NewOutletInputField
+          label="Business / Office Line"
+          value={businessPhone}
+          onChangeText={(t) => {
+            if (businessPhoneError && t.trim().length > 0) setBusinessPhoneError(false);
+            updateDraft({ businessPhone: t });
+          }}
+          keyboardType="phone-pad"
+          required
+        />
+        {businessPhoneError ? (
+          <Text style={styles.fieldError}>Business / Office Line is required.</Text>
+        ) : null}
+        <NewOutletInputField
+          label="Alternative Phone"
+          value={alternativePhone}
+          onChangeText={(t) => updateDraft({ alternativePhone: t })}
+          keyboardType="phone-pad"
+        />
+        <NewOutletInputField
+          label="Email Address"
+          value={email}
+          onChangeText={(t) => updateDraft({ email: t })}
+          keyboardType="email-address"
+        />
+      </NewOutletFormScreen>
+      <NewOutletFooterButtons onBack={onBack} onNext={handleNext} nextDisabled={!canGoNext} />
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#F6F7FB" },
-  scroll: { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 120, gap: 14 },
+  root: { flex: 1, backgroundColor: "#F6F7FB", overflow: "hidden" },
+  scroll: { paddingHorizontal: 16, paddingTop: 18, gap: 14 },
   title: { color: "#1E293B", fontSize: 31, fontFamily: font.extraBold },
   subtitle: { color: "#475569", fontSize: 19, marginBottom: 6, fontFamily: font.regular },
+  fieldError: { color: "#DC2626", fontSize: 14, fontFamily: font.semiBold, marginTop: -8 },
 });

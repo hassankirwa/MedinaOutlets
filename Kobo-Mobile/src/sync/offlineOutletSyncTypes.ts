@@ -5,6 +5,8 @@ export type OfflineOutletSyncRunResult =
   | {
       outcome: "complete";
       syncedCount: number;
+      failedCount: number;
       stoppedForNetwork: boolean;
       pendingCountBefore: number;
+      pendingCountAfter: number;
     };

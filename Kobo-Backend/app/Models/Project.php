@@ -14,6 +14,7 @@ class Project extends Model
      */
     protected $fillable = [
         'company_id',
+        'branch_id',
         'county_id',
         'name',
         'description',
@@ -21,6 +22,9 @@ class Project extends Model
         'start_date',
         'end_date',
         'created_by',
+        'manager_id',
+        'questionnaire_id',
+        'published_at',
     ];
 
     /**
@@ -31,6 +35,7 @@ class Project extends Model
         return [
             'start_date' => 'date',
             'end_date' => 'date',
+            'published_at' => 'datetime',
         ];
     }
 
@@ -40,6 +45,14 @@ class Project extends Model
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
+    }
+
+    /**
+     * @return BelongsTo<Branch, $this>
+     */
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
     }
 
     /**
@@ -59,6 +72,22 @@ class Project extends Model
     }
 
     /**
+     * @return BelongsTo<User, $this>
+     */
+    public function manager(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'manager_id');
+    }
+
+    /**
+     * @return BelongsTo<Questionnaire, $this>
+     */
+    public function questionnaire(): BelongsTo
+    {
+        return $this->belongsTo(Questionnaire::class);
+    }
+
+    /**
      * Field collectors assigned to this project.
      *
      * @return BelongsToMany<User, $this>
@@ -75,5 +104,29 @@ class Project extends Model
     public function wardAssignments(): HasMany
     {
         return $this->hasMany(ProjectWardAssignment::class);
+    }
+
+    /**
+     * @return HasMany<ProjectCoverage, $this>
+     */
+    public function coverages(): HasMany
+    {
+        return $this->hasMany(ProjectCoverage::class);
+    }
+
+    /**
+     * @return HasMany<ProjectFieldWorker, $this>
+     */
+    public function projectFieldWorkers(): HasMany
+    {
+        return $this->hasMany(ProjectFieldWorker::class);
+    }
+
+    /**
+     * @return HasMany<Outlet, $this>
+     */
+    public function outlets(): HasMany
+    {
+        return $this->hasMany(Outlet::class);
     }
 }

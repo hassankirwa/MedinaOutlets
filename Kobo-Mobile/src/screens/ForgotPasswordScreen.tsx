@@ -3,15 +3,21 @@ import {
   ActivityIndicator,
   Image,
   ImageBackground,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TouchableWithoutFeedback,
   View,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { font } from "../theme/fonts";
+import { bottomSafeInset } from "../utils/safeAreaInsets";
 
 const LOGIN_BG_IMAGE =
   "https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=1500&q=80";
@@ -38,82 +44,108 @@ export function ForgotPasswordScreen({
     [email, loading, successMessage],
   );
 
+  const handleSubmit = () => {
+    if (!canSubmit) return;
+    void onSubmit(email.trim());
+  };
+
   return (
     <ImageBackground source={{ uri: LOGIN_BG_IMAGE }} style={styles.bg}>
-      <View style={[styles.overlay, { paddingTop: insets.top + 24 }]}>
-        <Pressable style={styles.backRow} onPress={onBack} hitSlop={12}>
-          <MaterialCommunityIcons name="chevron-left" size={28} color="#FFFFFF" />
-          <Text style={styles.backText}>Back to sign in</Text>
-        </Pressable>
+      <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={0}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <ScrollView
+              style={styles.flex}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={[
+                styles.scrollContent,
+                { paddingBottom: bottomSafeInset(insets) + 160 },
+              ]}
+              showsVerticalScrollIndicator={false}
+            >
+              <Pressable style={styles.backRow} onPress={onBack} hitSlop={12}>
+                <MaterialCommunityIcons name="chevron-left" size={28} color="#FFFFFF" />
+                <Text style={styles.backText}>Back to sign in</Text>
+              </Pressable>
 
-        <View style={styles.logoWrap}>
-          <Image source={{ uri: LOGO_IMAGE }} style={styles.logo} />
-          <View>
-            <Text style={styles.logoTitle}>OUTLET CENSUS</Text>
-            <Text style={styles.logoTagline}>Track. Collect. Map. Empower.</Text>
-          </View>
-        </View>
+              <View style={styles.logoWrap}>
+                <Image source={{ uri: LOGO_IMAGE }} style={styles.logo} />
+                <View>
+                  <Text style={styles.logoTitle}>OUTLET CENSUS</Text>
+                  <Text style={styles.logoTagline}>Track. Collect. Map. Empower.</Text>
+                </View>
+              </View>
 
-        <View style={styles.card}>
-          <Text style={styles.title}>Forgot password</Text>
-          <Text style={styles.subtitle}>
-            Enter your account email and we will send you a link to reset your password.
-          </Text>
+              <View style={styles.card}>
+                <Text style={styles.title}>Forgot password</Text>
+                <Text style={styles.subtitle}>
+                  Enter your account email and we will send you a link to reset your password.
+                </Text>
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          {successMessage ? <Text style={styles.successText}>{successMessage}</Text> : null}
+                {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                {successMessage ? <Text style={styles.successText}>{successMessage}</Text> : null}
 
-          <Text style={styles.inputLabel}>Email</Text>
-          <TextInput
-            style={styles.input}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="collector@outlet.com"
-            placeholderTextColor="#7B8794"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!successMessage}
-          />
+                <Text style={styles.inputLabel}>Email</Text>
+                <TextInput
+                  style={styles.input}
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="collector@outlet.com"
+                  placeholderTextColor="#7B8794"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!successMessage}
+                  returnKeyType="go"
+                  onSubmitEditing={handleSubmit}
+                  textContentType="emailAddress"
+                />
 
-          <Pressable
-            style={[styles.primaryBtn, !canSubmit && styles.primaryBtnDisabled]}
-            onPress={() => void onSubmit(email.trim())}
-            disabled={!canSubmit}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFF" />
-            ) : (
-              <Text style={styles.primaryBtnText}>
-                {successMessage ? "Email sent" : "Send reset link"}
-              </Text>
-            )}
-          </Pressable>
-        </View>
-      </View>
-      <View style={styles.bottomWave} />
+                <Pressable
+                  style={[styles.primaryBtn, !canSubmit && styles.primaryBtnDisabled]}
+                  onPress={handleSubmit}
+                  disabled={!canSubmit}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFF" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>
+                      {successMessage ? "Email sent" : "Send reset link"}
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
+            </ScrollView>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+      <View style={styles.bottomWave} pointerEvents="none" />
     </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
   bg: { flex: 1 },
-  overlay: {
-    flex: 1,
+  safe: { flex: 1, backgroundColor: "rgba(0,0,0,0.16)" },
+  flex: { flex: 1 },
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 20,
-    paddingBottom: 120,
-    justifyContent: "flex-start",
-    backgroundColor: "rgba(0,0,0,0.16)",
+    paddingTop: 8,
   },
   backRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginBottom: 28,
+    marginBottom: 20,
     alignSelf: "flex-start",
   },
   backText: { color: "#FFFFFF", fontFamily: font.bold, fontSize: 16 },
-  logoWrap: { alignItems: "center", justifyContent: "center", marginBottom: 36 },
+  logoWrap: { alignItems: "center", justifyContent: "center", marginBottom: 28 },
   logo: { width: 68, height: 68, tintColor: "#0E4B9D", marginBottom: 8 },
   logoTitle: { color: "#FFFFFF", fontSize: 24, fontFamily: font.extraBold, letterSpacing: 0.8 },
   logoTagline: { color: "#EAF2FF", fontSize: 13, marginTop: 3, textAlign: "center", fontFamily: font.regular },

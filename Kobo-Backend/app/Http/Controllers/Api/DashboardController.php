@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
 use App\Models\Outlet;
+use App\Models\Project;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +24,8 @@ class DashboardController extends Controller
 
         $outletQuery = Outlet::query();
         $userQuery = User::query();
+        $projectQuery = Project::query();
+        $branchQuery = Branch::query();
 
         if ($user->role?->slug !== 'super_admin') {
             $companyId = $user->company_id;
@@ -31,6 +35,14 @@ class DashboardController extends Controller
                 $outletQuery->where($o.'.company_id', $companyId);
             }
             $userQuery->where('users.company_id', $companyId);
+            $projectQuery->where('company_id', $companyId);
+            $branchQuery->where('company_id', $companyId);
+        }
+
+        if ($request->filled('branch_id')) {
+            $branchId = (int) $request->query('branch_id');
+            $outletQuery->where($o.'.branch_id', $branchId);
+            $projectQuery->where('branch_id', $branchId);
         }
 
         $totalOutlets = (clone $outletQuery)->count();
@@ -119,8 +131,24 @@ class DashboardController extends Controller
             ];
         })->all();
 
+        $totalProjects = (clone $projectQuery)->count();
+        $activeProjects = (clone $projectQuery)->where('status', 'active')->count();
+        $totalBranches = (clone $branchQuery)->count();
+        $pendingReviews = (int) ($byStatus['pending'] ?? 0);
+
+        $submissionsByBranch = (clone $outletQuery)
+            ->join('branches', 'branches.id', '=', $o.'.branch_id')
+            ->selectRaw('branches.name as label, count(*) as count')
+            ->groupBy('branches.name')
+            ->pluck('count', 'label');
+
         return response()->json([
             'totalOutlets' => $totalOutlets,
+            'totalProjects' => $totalProjects,
+            'activeProjects' => $activeProjects,
+            'totalBranches' => $totalBranches,
+            'pendingReviews' => $pendingReviews,
+            'submissionsByBranch' => $submissionsByBranch,
             'countiesCovered' => $countiesCovered,
             'fieldWorkers' => $fieldWorkers,
             'submissionsToday' => $submissionsToday,

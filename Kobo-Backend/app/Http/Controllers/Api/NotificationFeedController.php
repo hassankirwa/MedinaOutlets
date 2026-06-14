@@ -31,6 +31,8 @@ class NotificationFeedController extends Controller
                 'page_key' => $payload['page_key'] ?? null,
                 'entity_type' => $payload['entity_type'] ?? null,
                 'entity_id' => $payload['entity_id'] ?? null,
+                'mobile_screen' => $payload['mobile_screen'] ?? null,
+                'mobile_params' => $payload['mobile_params'] ?? null,
             ];
         })->values()->all();
 

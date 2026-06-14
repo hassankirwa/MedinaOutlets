@@ -1,12 +1,21 @@
-export type OutletPhoto = { id: string; uri: string };
+export type OutletPhoto = {
+  id: string;
+  uri: string;
+  capturedAt?: string;
+  latitude?: number;
+  longitude?: number;
+};
 
 export type NewOutletDraft = {
-  /** County project the collector is working under (field collectors only). */
   collectionProjectId: string | null;
   collectionProjectName: string;
-  /** Ward assigned on that project; sent as `ward_id` when creating the outlet. */
+  branchId: number | null;
+  branchName: string;
+  countyId: number | null;
+  countyName: string;
   wardId: number | null;
   wardName: string;
+  questionnaireId: number | null;
   typeOfAccount: string;
   medicalFacilityStatus: string;
   outletServicedByMed: string;
@@ -14,6 +23,7 @@ export type NewOutletDraft = {
   facilityName: string;
   ownerName: string;
   businessPhone: string;
+  alternativePhone: string;
   email: string;
   physicalLocation: string;
   landmark: string;
@@ -21,6 +31,16 @@ export type NewOutletDraft = {
   accuracyMeters: number;
   latitude: number;
   longitude: number;
+  gpsCapturedAt: string;
+  capturedPlaceName: string;
+  reverseGeocodedAddress: string;
+  capturedAddress: string;
+  road: string;
+  suburb: string;
+  capturedWard: string;
+  capturedCounty: string;
+  region: string;
+  country: string;
   photos: OutletPhoto[];
   remarks: string;
 };

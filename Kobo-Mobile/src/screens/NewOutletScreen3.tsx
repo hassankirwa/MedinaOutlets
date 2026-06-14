@@ -1,27 +1,47 @@
 import * as Location from "expo-location";
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useState } from "react";
+import { Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { WebView } from "react-native-webview";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { NewOutletInputField } from "../components/NewOutletFields";
+import { apiReverseGeocode } from "../api/client";
+import { NewOutletFormScreen } from "../components/NewOutletFormScreen";
 import { NewOutletFooterButtons } from "../components/NewOutletFooterButtons";
 import { NewOutletHeader } from "../components/NewOutletHeader";
 import { NewOutletStepBar } from "../components/NewOutletStepBar";
+import { useAuth } from "../context/AuthContext";
 import { useNewOutletDraft } from "../context/NewOutletDraftContext";
 import { font } from "../theme/fonts";
-import { useState } from "react";
 
 export function NewOutletScreen3({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
   const insets = useSafeAreaInsets();
+  const { token } = useAuth();
   const { draft, updateDraft } = useNewOutletDraft();
-  const { physicalLocation, landmark, gps, accuracyMeters, latitude, longitude } = draft;
+  const {
+    landmark,
+    gps,
+    accuracyMeters,
+    latitude,
+    longitude,
+    gpsCapturedAt,
+    capturedAddress,
+    road,
+    suburb,
+    capturedWard,
+    capturedCounty,
+    region,
+    country,
+    reverseGeocodedAddress,
+  } = draft;
   const [isCapturing, setIsCapturing] = useState(false);
+  const [geocodeFailed, setGeocodeFailed] = useState(false);
 
-  const coordinates = { latitude, longitude };
-  const canGoNext = physicalLocation.trim().length > 1 && landmark.trim().length > 1;
+  const hasGps = gpsCapturedAt.trim().length > 0;
+  const canGoNext = hasGps;
 
   const captureCurrentLocation = async () => {
     try {
       setIsCapturing(true);
+      setGeocodeFailed(false);
       const permission = await Location.requestForegroundPermissionsAsync();
       if (permission.status !== "granted") {
         Alert.alert("Location Access Needed", "Please allow location permission to capture GPS.");
@@ -36,13 +56,57 @@ export function NewOutletScreen3({ onBack, onNext }: { onBack: () => void; onNex
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
       };
-      const nextAccuracy = location.coords.accuracy ? Math.max(1, Math.round(location.coords.accuracy)) : draft.accuracyMeters;
-      updateDraft({
+      const nextAccuracy = location.coords.accuracy ? Math.max(1, Math.round(location.coords.accuracy)) : 0;
+      const capturedAt = new Date().toISOString();
+
+      const updates: Parameters<typeof updateDraft>[0] = {
         latitude: nextCoords.latitude,
         longitude: nextCoords.longitude,
         gps: `${nextCoords.latitude.toFixed(5)}, ${nextCoords.longitude.toFixed(5)}`,
         accuracyMeters: nextAccuracy,
-      });
+        gpsCapturedAt: capturedAt,
+      };
+
+      let geocodedOk = false;
+      if (token) {
+        try {
+          const geocoded = await apiReverseGeocode(token, nextCoords.latitude, nextCoords.longitude);
+          updates.capturedAddress = geocoded.captured_address ?? "";
+          updates.reverseGeocodedAddress = geocoded.reverse_geocoded_address ?? geocoded.captured_address ?? "";
+          updates.capturedPlaceName = geocoded.captured_place_name ?? geocoded.captured_address ?? "";
+          updates.road = geocoded.road ?? "";
+          updates.suburb = geocoded.suburb ?? "";
+          updates.capturedWard = geocoded.captured_ward ?? "";
+          updates.capturedCounty = geocoded.captured_county ?? "";
+          updates.region = geocoded.region ?? "";
+          updates.country = geocoded.country ?? "";
+          if (geocoded.landmark) {
+            updates.landmark = geocoded.landmark;
+          }
+          const summaryParts = [
+            geocoded.landmark,
+            geocoded.road,
+            geocoded.suburb,
+            geocoded.captured_ward,
+            geocoded.captured_county,
+          ].filter((p): p is string => Boolean(p && String(p).trim()));
+          if (summaryParts.length > 0) {
+            updates.physicalLocation = summaryParts.join(", ");
+          }
+          geocodedOk = Boolean(
+            geocoded.landmark ||
+              geocoded.road ||
+              geocoded.captured_ward ||
+              geocoded.captured_county ||
+              geocoded.suburb,
+          );
+        } catch {
+          geocodedOk = false;
+        }
+      }
+
+      updateDraft(updates);
+      setGeocodeFailed(!geocodedOk);
     } catch {
       Alert.alert("GPS Error", "Failed to fetch current location. Please try again.");
     } finally {
@@ -50,100 +114,135 @@ export function NewOutletScreen3({ onBack, onNext }: { onBack: () => void; onNex
     }
   };
 
+  const osmRows: { label: string; value: string }[] = [
+    { label: "Nearest Landmark", value: landmark },
+    { label: "Road / Street", value: road },
+    { label: "Area / Subcounty", value: suburb },
+    { label: "Ward", value: capturedWard },
+    { label: "County", value: capturedCounty },
+    { label: "Region", value: region },
+    { label: "Country", value: country },
+  ].filter((row) => row.value.trim().length > 0);
+
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
       <NewOutletHeader topInset={insets.top} onBack={onBack} />
       <NewOutletStepBar step={3} />
-      <View style={styles.content}>
+      <NewOutletFormScreen contentContainerStyle={styles.content}>
         <Text style={styles.title}>Location Details</Text>
-        <Text style={styles.subtitle}>Where is this outlet located?</Text>
+        <Text style={styles.subtitle}>
+          Capture GPS to detect the outlet location from OpenStreetMap. County and ward are derived from GPS, not
+          selected manually.
+        </Text>
 
-        <NewOutletInputField label="Physical Location" value={physicalLocation} onChangeText={(t) => updateDraft({ physicalLocation: t })} required />
-        <NewOutletInputField label="Nearest Known Landmark" value={landmark} onChangeText={(t) => updateDraft({ landmark: t })} required />
+        <Pressable
+          style={[styles.captureBtn, isCapturing && styles.captureBtnDisabled]}
+          onPress={() => void captureCurrentLocation()}
+          disabled={isCapturing}
+        >
+          <Text style={styles.captureBtnText}>
+            {isCapturing ? "Capturing GPS…" : hasGps ? "Refresh GPS Location" : "Capture GPS Location"}
+          </Text>
+        </Pressable>
 
-        <View style={styles.field}>
-          <Text style={styles.label}>GPS Location</Text>
-          <View style={styles.gpsRow}>
-            <TextInput
-              style={styles.gpsInput}
-              value={gps}
-              onChangeText={(t) => updateDraft({ gps: t })}
-              placeholder="Latitude, longitude"
-              placeholderTextColor="#94A3B8"
-            />
-            <View style={styles.accuracyPill}>
-              <Text style={styles.accuracyText}>Accuracy: {accuracyMeters}m</Text>
-            </View>
+        {hasGps ? (
+          <View style={styles.gpsCard}>
+            <Text style={styles.gpsLabel}>GPS Coordinates</Text>
+            <Text style={styles.gpsValue}>{gps}</Text>
+            <Text style={styles.gpsMeta}>Accuracy: {accuracyMeters > 0 ? `${accuracyMeters} m` : "—"}</Text>
           </View>
+        ) : (
+          <Text style={styles.hint}>GPS is required before you can continue.</Text>
+        )}
+
+        {geocodeFailed && hasGps ? (
+          <Text style={styles.geocodeWarning}>
+            GPS saved. Address details could not be loaded from OpenStreetMap.
+          </Text>
+        ) : null}
+
+        {hasGps && osmRows.length > 0 ? (
+          <View style={styles.detectedCard}>
+            <Text style={styles.detectedLabel}>OpenStreetMap Details</Text>
+            {osmRows.map((row) => (
+              <View key={row.label} style={styles.osmRow}>
+                <Text style={styles.osmRowLabel}>{row.label}</Text>
+                <Text style={styles.osmRowValue}>{row.value}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {hasGps ? (
           <View style={styles.mapWrap}>
             <WebView
-              key={`${coordinates.latitude}-${coordinates.longitude}`}
-              source={{ html: getLeafletMapHtml(coordinates.latitude, coordinates.longitude) }}
+              key={`${latitude}-${longitude}`}
+              source={{ html: getLeafletMapHtml(latitude, longitude) }}
               style={styles.mapView}
               javaScriptEnabled
               domStorageEnabled
               scrollEnabled={false}
             />
           </View>
-          <View style={styles.mapButtonsRow}>
-            <Pressable style={styles.secondaryBtn} onPress={captureCurrentLocation} disabled={isCapturing}>
-              <Text style={styles.secondaryText}>{isCapturing ? "Capturing..." : "Capture GPS"}</Text>
-            </Pressable>
-            <Pressable style={styles.secondaryBtn} onPress={captureCurrentLocation} disabled={isCapturing}>
-              <Text style={styles.secondaryText}>Refresh</Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
+        ) : null}
+      </NewOutletFormScreen>
       <NewOutletFooterButtons onBack={onBack} onNext={onNext} nextDisabled={!canGoNext} />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#F6F7FB" },
-  content: { flex: 1, padding: 20, paddingBottom: 100 },
+  root: { flex: 1, backgroundColor: "#F6F7FB", overflow: "hidden" },
+  content: { padding: 20, gap: 12 },
   title: { fontSize: 39, fontFamily: font.extraBold, color: "#1E293B" },
-  subtitle: { marginTop: 8, marginBottom: 8, fontSize: 26, color: "#475569", fontFamily: font.regular },
-  field: { marginTop: 10 },
-  label: { color: "#334155", fontSize: 22, fontFamily: font.bold, marginBottom: 10, lineHeight: 26 },
-  gpsRow: { flexDirection: "row", gap: 8 },
-  gpsInput: {
-    flex: 1,
-    minHeight: 52,
-    borderWidth: 1,
-    borderColor: "#D4DEE8",
+  subtitle: { fontSize: 18, color: "#475569", fontFamily: font.regular, lineHeight: 24 },
+  captureBtn: {
+    backgroundColor: "#0F9445",
     borderRadius: 10,
-    backgroundColor: "#FFF",
-    paddingHorizontal: 14,
-    color: "#1F2937",
-    fontSize: 16,
-    fontFamily: font.regular,
+    height: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
   },
-  accuracyPill: { alignSelf: "center", backgroundColor: "#E2E8F0", paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8 },
-  accuracyText: { color: "#475569", fontFamily: font.semiBold, fontSize: 12 },
+  captureBtnDisabled: { backgroundColor: "#8ECFA8" },
+  captureBtnText: { color: "#FFF", fontSize: 17, fontFamily: font.bold },
+  hint: { color: "#64748B", fontSize: 15, fontFamily: font.semiBold },
+  geocodeWarning: { color: "#B45309", fontSize: 14, fontFamily: font.regular, lineHeight: 20 },
+  gpsCard: {
+    backgroundColor: "#EFF6FF",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    padding: 14,
+    gap: 4,
+  },
+  gpsLabel: { fontFamily: font.semiBold, fontSize: 13, color: "#1D4ED8" },
+  gpsValue: { fontFamily: font.semiBold, fontSize: 16, color: "#1E3A8A" },
+  gpsMeta: { fontFamily: font.regular, fontSize: 13, color: "#1D4ED8" },
+  detectedCard: {
+    backgroundColor: "#ECFDF5",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    padding: 14,
+    gap: 8,
+  },
+  detectedLabel: { fontFamily: font.semiBold, fontSize: 13, color: "#047857", marginBottom: 4 },
+  osmRow: { gap: 2 },
+  osmRowLabel: { fontFamily: font.semiBold, fontSize: 12, color: "#047857" },
+  osmRowValue: { fontFamily: font.regular, fontSize: 14, color: "#064E3B", lineHeight: 20 },
   mapWrap: {
     width: "100%",
     height: 138,
-    marginTop: 10,
     borderRadius: 8,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "#D4DEE8",
   },
   mapView: { width: "100%", height: "100%" },
-  mapButtonsRow: { flexDirection: "row", gap: 10, marginTop: 10 },
-  secondaryBtn: {
-    flex: 1,
-    height: 46,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FFFFFF",
-  },
-  secondaryText: { color: "#334155", fontSize: 16, fontFamily: font.semiBold },
 });
 
 function getLeafletMapHtml(latitude: number, longitude: number): string {

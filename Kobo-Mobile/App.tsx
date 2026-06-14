@@ -6,7 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, BackHandler, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { apiCreateOutlet, apiForgotPassword, apiMyWardAssignments } from "./src/api/client";
+import { apiCreateOutlet, apiForgotPassword, apiListMyOutlets, apiMyWardAssignments, apiFetchNotificationPreferences } from "./src/api/client";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import { FieldWorkerNavProvider } from "./src/context/FieldWorkerNavContext";
 import {
@@ -55,6 +55,16 @@ import { MyDraftsScreen } from "./src/screens/MyDraftsScreen";
 import { BootSplashScreen } from "./src/components/BootSplashScreen";
 import { getOnboardingDoneStorageKey } from "./src/constants/onboardingStorage";
 import { OnboardingScreen } from "./src/screens/OnboardingScreen";
+import { NotificationsScreen } from "./src/screens/NotificationsScreen";
+import { attachNotificationResponseListener, handleColdStartNotification } from "./src/notifications/notificationHandler";
+import { setNotificationNavigationHandler } from "./src/notifications/navigationBridge";
+import {
+  cancelPendingSyncReminder,
+  notifySyncResult,
+  refreshPendingSyncReminderSchedule,
+} from "./src/notifications/localSyncNotifications";
+import type { MobileNotificationPayload } from "./src/notifications/types";
+import { outletListRowToSubmitted } from "./src/utils/outletApiMap";
 
 type AppScreen =
   | "login"
@@ -71,7 +81,8 @@ type AppScreen =
   | "newOutletSuccess"
   | "mySubmissions"
   | "submissionDetails"
-  | "profile";
+  | "profile"
+  | "notifications";
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -175,7 +186,7 @@ function AppContent() {
     const pendingBefore = await listPendingOutletsForUser(user.id);
     flushMutexRef.current = true;
     try {
-      const { syncedCount, stoppedForNetwork } = await flushPendingOutletsForUser(
+      const { syncedCount, failedCount, stoppedForNetwork } = await flushPendingOutletsForUser(
         token,
         user.id,
         replaceSubmissionAfterSync,
@@ -187,11 +198,35 @@ function AppContent() {
           );
         },
       );
+      const pendingAfter = await listPendingOutletsForUser(user.id);
+      let syncReminderEnabled = true;
+      try {
+        const prefs = await apiFetchNotificationPreferences(token);
+        syncReminderEnabled = prefs.sync_reminder !== false;
+      } catch {
+        /* default on */
+      }
+      await notifySyncResult({
+        syncedCount,
+        failedCount,
+        stoppedForNetwork,
+        pendingRemaining: pendingAfter.length,
+        enabled: syncReminderEnabled,
+      });
+      await refreshPendingSyncReminderSchedule({
+        pendingCount: pendingAfter.length,
+        enabled: syncReminderEnabled,
+      });
+      if (pendingAfter.length === 0) {
+        await cancelPendingSyncReminder();
+      }
       return {
         outcome: "complete",
         syncedCount,
+        failedCount,
         stoppedForNetwork,
         pendingCountBefore: pendingBefore.length,
+        pendingCountAfter: pendingAfter.length,
       };
     } finally {
       flushMutexRef.current = false;
@@ -240,7 +275,86 @@ function AppContent() {
     }
   }, [signIn]);
 
+  const openSubmissionByOutletId = useCallback(
+    async (outletId: string) => {
+      const existing = submittedOutlets.find((x) => x.id === outletId);
+      if (existing) {
+        setActiveSubmissionId(outletId);
+        setScreen("submissionDetails");
+        return;
+      }
+      if (!token || !user) {
+        setScreen("mySubmissions");
+        return;
+      }
+      try {
+        const rows = await apiListMyOutlets(token);
+        const match = rows.find((r) => r.id === outletId);
+        if (match) {
+          const mapped = outletListRowToSubmitted(match, user.name ?? "You");
+          addSubmitted(mapped);
+          setActiveSubmissionId(outletId);
+          setScreen("submissionDetails");
+          return;
+        }
+      } catch {
+        /* fall through */
+      }
+      setScreen("mySubmissions");
+    },
+    [submittedOutlets, token, user, addSubmitted],
+  );
+
+  const handleNotificationPayload = useCallback(
+    (payload: MobileNotificationPayload) => {
+      const screen = payload.mobile_screen;
+      if (screen === "submission_details") {
+        const outletId = payload.mobile_params?.outlet_id ?? payload.entity_id;
+        if (outletId) {
+          void openSubmissionByOutletId(outletId);
+        } else {
+          setScreen("mySubmissions");
+        }
+        return;
+      }
+      if (screen === "projects") {
+        setScreen("projects");
+        return;
+      }
+      setScreen("notifications");
+    },
+    [openSubmissionByOutletId],
+  );
+
+  useEffect(() => {
+    setNotificationNavigationHandler(handleNotificationPayload);
+    const detach = attachNotificationResponseListener();
+    void handleColdStartNotification();
+    return () => {
+      setNotificationNavigationHandler(null);
+      detach();
+    };
+  }, [handleNotificationPayload]);
+
+  useEffect(() => {
+    if (!token || !user) {
+      return;
+    }
+    void (async () => {
+      const pending = await listPendingOutletsForUser(user.id);
+      let enabled = true;
+      try {
+        const prefs = await apiFetchNotificationPreferences(token);
+        enabled = prefs.sync_reminder !== false;
+      } catch {
+        /* default on */
+      }
+      await refreshPendingSyncReminderSchedule({ pendingCount: pending.length, enabled });
+    })();
+  }, [token, user?.id, submittedOutlets.length]);
+
   const handleLogout = useCallback(async () => {
+    await cancelPendingSyncReminder();
     await signOut();
     clearLocalSubmissions();
     setScreen("login");
@@ -403,8 +517,8 @@ function AppContent() {
       setScreen("login");
       return;
     }
-    if (user.role?.slug === "field_collector" && draft.wardId == null) {
-      Alert.alert("Project & ward", "Select a project and ward before submitting.");
+    if (user.role?.slug === "field_collector" && !draft.collectionProjectId) {
+      Alert.alert("Project required", "Select a project before submitting.");
       return;
     }
     const localId = `pending-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
@@ -448,8 +562,8 @@ function AppContent() {
       return;
     }
 
-    if (user.role?.slug === "field_collector" && draft.wardId == null) {
-      Alert.alert("Project & ward", "Select a project and ward before submitting.");
+    if (user.role?.slug === "field_collector" && !draft.collectionProjectId) {
+      Alert.alert("Project required", "Select a project before submitting.");
       return;
     }
 
@@ -541,7 +655,14 @@ function AppContent() {
             onOpenMySubmissions={() => setScreen("mySubmissions")}
             onOpenMyDrafts={() => setScreen("myDrafts")}
             onOpenProjects={() => setScreen("projects")}
+            onOpenNotifications={() => setScreen("notifications")}
             onManualSyncOfflineQueue={runOfflineOutletSync}
+          />
+        ) : screen === "notifications" ? (
+          <NotificationsScreen
+            token={token}
+            onBack={() => setScreen("dashboard")}
+            onOpenPayload={handleNotificationPayload}
           />
         ) : screen === "myDrafts" ? (
           <MyDraftsScreen
@@ -586,7 +707,7 @@ function AppContent() {
               submission={submittedOutlets.find((x) => x.id === activeSubmissionId)!}
               token={token}
               onBack={() => setScreen("mySubmissions")}
-              onEdit={() => void requestNewOutlet()}
+              onAddNewSubmission={() => void requestNewOutlet()}
             />
           ) : (
             <MySubmissionsScreen

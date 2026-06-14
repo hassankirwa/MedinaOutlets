@@ -1,25 +1,30 @@
 from pathlib import Path
 from urllib.parse import urlparse
 import mimetypes
+import os
 import re
 import time
 
 import pandas as pd
+from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
 
+load_dotenv()
 
 # =========================
 # CONFIG
 # =========================
-EXCEL_FILE = r"C:\Users\hassan.kirwa\Downloads\kobo-data.xlsx"
+EXCEL_FILE = r"KoboDocs\MEDINA_PHARMACEUTICAL_OUTLET_CENSUS__GEO-MAPPING_-_NAROK_-_all_versions_-_labels_-_2026-06-03-06-52-22.xlsx"
 IMAGE_URL_COLUMN = "FACILITY_PHOTO_URL"      # column containing the image URL
 IMAGE_NAME_COLUMN = "FACILITY_PHOTO"    # column containing the name to save as
-OUTPUT_DIR = "downloaded_images"
+OUTPUT_DIR = "downloaded_images2"
 
 LOGIN_URL = "https://kf.kobotoolbox.org/"
-HEADLESS = False                    # keep visible so you can log in manually
-WAIT_AFTER_LOGIN_SECONDS = 20       # time for you to complete login if needed
+HEADLESS = False
 REQUEST_TIMEOUT_MS = 60000
+
+KOBO_USERNAME = os.environ["KOBO_USERNAME"]
+KOBO_PASSWORD = os.environ["KOBO_PASSWORD"]
 
 
 def sanitize_filename(name: str) -> str:
@@ -108,12 +113,17 @@ def main():
         context = browser.new_context(accept_downloads=True)
         page = context.new_page()
 
-        print(f"Opening login page: {LOGIN_URL}")
-        page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=REQUEST_TIMEOUT_MS)
+        login_url = "https://kf.kobotoolbox.org/accounts/login/"
+        print(f"Opening login page: {login_url}")
+        page.goto(login_url, wait_until="networkidle", timeout=REQUEST_TIMEOUT_MS)
 
-        print("\\nLog in manually in the opened browser window.")
-        print(f"Waiting {WAIT_AFTER_LOGIN_SECONDS} seconds for login...")
-        time.sleep(WAIT_AFTER_LOGIN_SECONDS)
+        print("Logging in...")
+        page.wait_for_selector("input[name='login']", timeout=REQUEST_TIMEOUT_MS)
+        page.fill("input[name='login']", KOBO_USERNAME)
+        page.fill("input[name='password']", KOBO_PASSWORD)
+        page.click("button[type='submit']")
+        page.wait_for_load_state("networkidle", timeout=REQUEST_TIMEOUT_MS)
+        print("Login complete.")
 
         # After login, requests from this context share auth/session cookies
         request_context = context.request
@@ -143,25 +153,42 @@ def main():
                 display_name = f"row_{excel_row_num}"
 
             try:
-                response = request_context.get(
-                    image_url,
-                    timeout=REQUEST_TIMEOUT_MS,
-                    fail_on_status_code=False
-                )
+                max_retries = 3
+                body = None
+                content_type = ""
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        response = request_context.get(
+                            image_url,
+                            timeout=REQUEST_TIMEOUT_MS,
+                            fail_on_status_code=False
+                        )
 
-                if not response.ok:
-                    results.append({
-                        "row": excel_row_num,
-                        "url": image_url,
-                        "image_name": display_name,
-                        "status": "failed",
-                        "message": f"HTTP {response.status}"
-                    })
-                    print(f"[FAILED] Row {excel_row_num}: HTTP {response.status}")
+                        if not response.ok:
+                            results.append({
+                                "row": excel_row_num,
+                                "url": image_url,
+                                "image_name": display_name,
+                                "status": "failed",
+                                "message": f"HTTP {response.status}"
+                            })
+                            print(f"[FAILED] Row {excel_row_num}: HTTP {response.status}")
+                            body = None
+                            break
+
+                        content_type = response.headers.get("content-type", "")
+                        body = response.body()
+                        break
+                    except Exception as e:
+                        if "ECONNRESET" in str(e) and attempt < max_retries:
+                            wait = attempt * 3
+                            print(f"[RETRY {attempt}/{max_retries}] Row {excel_row_num}: ECONNRESET, retrying in {wait}s...")
+                            time.sleep(wait)
+                        else:
+                            raise
+
+                if body is None:
                     continue
-
-                content_type = response.headers.get("content-type", "")
-                body = response.body()
 
                 # Some platforms may still return the file even with a generic content-type.
                 # Filename from name column for this row; fallback stem if column empty.
@@ -200,11 +227,10 @@ def main():
 
         browser.close()
 
-    pd.DataFrame(results).to_excel("download_results.xlsx", index=False)
+    pd.DataFrame(results).to_excel("download_results2.xlsx", index=False)
     print("\\nDone.")
     print(f"Images folder: {output_dir.resolve()}")
-    print("Report file: download_results.xlsx")
-
+    print("Report file: download_results2.xlsx")
 
 if __name__ == "__main__":
     main()

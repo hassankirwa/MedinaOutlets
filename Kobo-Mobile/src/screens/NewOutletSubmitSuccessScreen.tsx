@@ -2,9 +2,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NewOutletHeader } from "../components/NewOutletHeader";
-import { NewOutletStepBar } from "../components/NewOutletStepBar";
 import { useNewOutletDraft } from "../context/NewOutletDraftContext";
 import { font } from "../theme/fonts";
+import { bottomSafeInset } from "../utils/safeAreaInsets";
 
 export function NewOutletSubmitSuccessScreen({
   onAddAnotherOutlet,
@@ -22,7 +22,6 @@ export function NewOutletSubmitSuccessScreen({
   return (
     <View style={styles.root}>
       <NewOutletHeader topInset={insets.top} onBack={onViewAllOutlets} />
-      <NewOutletStepBar step={6} total={6} />
 
       <View style={styles.content}>
         <View style={[styles.iconWrap, isOfflineQueued && styles.iconWrapOffline]}>
@@ -43,7 +42,7 @@ export function NewOutletSubmitSuccessScreen({
         </Text>
       </View>
 
-      <View style={styles.actions}>
+      <View style={[styles.actions, { paddingBottom: bottomSafeInset(insets) + 24 }]}>
         <Pressable style={styles.primaryButton} onPress={onAddAnotherOutlet}>
           <Text style={styles.primaryText}>Add Another Outlet</Text>
         </Pressable>
@@ -56,10 +55,11 @@ export function NewOutletSubmitSuccessScreen({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#F6F7FB" },
+  root: { flex: 1, backgroundColor: "#F6F7FB", overflow: "hidden" },
   content: {
     flex: 1,
     margin: 16,
+    marginBottom: 0,
     borderRadius: 16,
     backgroundColor: "#FFF",
     alignItems: "center",
@@ -78,7 +78,14 @@ const styles = StyleSheet.create({
   iconWrapOffline: { backgroundColor: "#FEF3C7" },
   title: { color: "#1E293B", fontSize: 30, lineHeight: 36, fontFamily: font.extraBold, textAlign: "center" },
   subtitle: { color: "#334155", fontSize: 18, lineHeight: 25, textAlign: "center", fontFamily: font.regular },
-  actions: { paddingHorizontal: 16, paddingBottom: 24, gap: 10 },
+  actions: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    gap: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#D4DEE8",
+    backgroundColor: "#FFFFFF",
+  },
   primaryButton: {
     height: 50,
     borderRadius: 8,

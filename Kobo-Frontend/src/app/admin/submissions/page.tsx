@@ -5,9 +5,7 @@ import Link from "next/link";
 import {
   BadgeCheck,
   Calendar,
-  CheckCircle2,
   ChevronDown,
-  CircleDot,
   Eye,
   FileText,
   FileSpreadsheet,
@@ -17,83 +15,40 @@ import {
   Leaf,
   Loader2,
   Menu,
+  Pencil,
   Phone,
   Search,
   ShoppingBag,
   Stethoscope,
   Upload,
-  XCircle,
 } from "lucide-react";
 import { AdminShell } from "../dashboard/_components/AdminShell";
 import { NotificationBell } from "@/components/NotificationBell";
 import {
-  bulkUpdateOutletStatuses,
+  bulkDeleteOutlets,
   downloadOutletSpreadsheetBlob,
   fetchOutletsApi,
   importOutletsSpreadsheet,
-  updateOutletStatus,
   canReviewOutletSubmissions,
   readUserProfile,
-  type OutletReviewStatus,
 } from "@/lib/api";
 import { normalizeOutletType, type ApiOutletRow } from "@/lib/outletTransform";
 import { resolveOutletMediaUrl } from "@/lib/mediaUrl";
+import {
+  submissionCellValue,
+  visibleColumnsForScope,
+} from "@/lib/submissionColumns";
+import {
+  SubmissionColumnPicker,
+  SubmissionColumnsButton,
+  useSubmissionHiddenColumns,
+} from "@/components/submissions/SubmissionColumnPicker";
 
-type ReviewDisplay = "Approved" | "Pending" | "Rejected";
-
-type SubmissionRow = {
-  id: string;
-  facilityName: string;
-  owner: string;
-  phone: string;
-  /** Facility account type: Pharmacy, Agrovet, Shop, Clinic / Dispensary, Hospital */
-  facilityAccountType: string;
-  location: string;
-  locationSub: string;
-  fieldWorker: string;
-  fieldAvatar: string;
-  /** Medical registration (registered outlet or not) */
-  registration: "Registered" | "Unregistered";
-  reviewStatus: ReviewDisplay;
-  submittedAt: string;
-  photo: string;
-};
-
-function apiToReviewDisplay(status: string | undefined): ReviewDisplay {
-  const s = (status ?? "pending").toLowerCase();
-  if (s === "approved") {
-    return "Approved";
-  }
-  if (s === "rejected") {
-    return "Rejected";
-  }
-  return "Pending";
-}
-
-function apiRowToSubmission(api: ApiOutletRow): SubmissionRow {
-  const reviewStatus = apiToReviewDisplay(api.status);
-  const normType = normalizeOutletType(api.type);
-  const registration = api.accountStatus === "Unregistered" ? "Unregistered" : "Registered";
-  const loc = api.location.split(" · ");
+function submissionThumb(api: ApiOutletRow): string {
   const thumbRaw =
     api.photo_urls?.[0] ??
     `https://ui-avatars.com/api/?size=160&background=f1f5f9&color=334155&name=${encodeURIComponent(api.name)}`;
-  const thumb = resolveOutletMediaUrl(thumbRaw);
-  return {
-    id: api.id,
-    facilityName: api.name,
-    owner: api.owner,
-    phone: api.phone || "—",
-    facilityAccountType: normType,
-    location: loc[0] ?? api.location,
-    locationSub: loc.slice(1).join(" · "),
-    fieldWorker: api.fieldWorker || "—",
-    fieldAvatar: `https://ui-avatars.com/api/?size=80&name=${encodeURIComponent(api.fieldWorker || "?")}`,
-    registration,
-    reviewStatus,
-    submittedAt: api.submittedAt || "—",
-    photo: thumb,
-  };
+  return resolveOutletMediaUrl(thumbRaw);
 }
 
 function StatCard({
@@ -153,7 +108,7 @@ function FacilityAccountTypeBadge({ type }: { type: string }) {
   );
 }
 
-function RegistrationBadge({ registration }: { registration: SubmissionRow["registration"] }) {
+function RegistrationBadge({ registration }: { registration: "Registered" | "Unregistered" }) {
   return (
     <span
       className={`inline-flex rounded-md px-2 py-1 text-[10px] font-medium ${
@@ -167,85 +122,16 @@ function RegistrationBadge({ registration }: { registration: SubmissionRow["regi
   );
 }
 
-function StatusBadge({ status }: { status: ReviewDisplay }) {
-  const label = status === "Pending" ? "Under review" : status;
-  const styles =
-    status === "Approved"
-      ? "bg-emerald-50 text-emerald-700"
-      : status === "Pending"
-        ? "bg-amber-50 text-amber-700"
-        : "bg-rose-50 text-rose-700";
-  const Icon =
-    status === "Approved"
-      ? CheckCircle2
-      : status === "Pending"
-        ? CircleDot
-        : XCircle;
-
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium ${styles}`}>
-      <Icon size={12} />
-      {label}
-    </span>
-  );
-}
-
-function ReviewButtons({
-  row,
-  canReview,
-  busy,
-  onReview,
-}: {
-  row: SubmissionRow;
-  canReview: boolean;
-  busy: boolean;
-  onReview: (id: string, status: OutletReviewStatus) => void;
-}) {
-  if (!canReview) {
-    return null;
-  }
-  const smallBtn =
-    "rounded-md px-2 py-1 text-[10px] font-semibold disabled:opacity-50 inline-flex items-center gap-1";
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      <button
-        type="button"
-        disabled={busy || row.reviewStatus === "Approved"}
-        className={`${smallBtn} border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100`}
-        onClick={() => onReview(row.id, "approved")}
-      >
-        {busy ? <Loader2 size={12} className="animate-spin" /> : null}
-        Approve
-      </button>
-      <button
-        type="button"
-        disabled={busy || row.reviewStatus === "Rejected"}
-        className={`${smallBtn} border border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100`}
-        onClick={() => onReview(row.id, "rejected")}
-      >
-        Reject
-      </button>
-      <button
-        type="button"
-        disabled={busy || row.reviewStatus === "Pending"}
-        className={`${smallBtn} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}
-        onClick={() => onReview(row.id, "pending")}
-      >
-        Pending
-      </button>
-    </div>
-  );
-}
-
 export default function SubmissionsPage() {
-  const [rows, setRows] = React.useState<SubmissionRow[]>([]);
+  const [rows, setRows] = React.useState<ApiOutletRow[]>([]);
+  const { hiddenKeys, showPicker, setShowPicker, toggleColumn, resetColumns } =
+    useSubmissionHiddenColumns("global");
+  const visibleCols = visibleColumnsForScope("global", hiddenKeys);
   const [loadState, setLoadState] = React.useState<"loading" | "ok" | "error">("loading");
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
-  const [statusFilter, setStatusFilter] = React.useState<"all" | ReviewDisplay>("all");
-  const [updatingId, setUpdatingId] = React.useState<string | null>(null);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
-  const [bulkAction, setBulkAction] = React.useState<"" | OutletReviewStatus>("");
+  const [bulkAction, setBulkAction] = React.useState<"" | "delete">("");
   const [bulkBusy, setBulkBusy] = React.useState(false);
   const [importMenuOpen, setImportMenuOpen] = React.useState(false);
   const [exportMenuOpen, setExportMenuOpen] = React.useState(false);
@@ -264,7 +150,7 @@ export default function SubmissionsPage() {
     setLoadError(null);
     try {
       const raw = await fetchOutletsApi();
-      setRows(raw.map(apiRowToSubmission));
+      setRows(raw);
       setLoadState("ok");
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load submissions");
@@ -290,26 +176,27 @@ export default function SubmissionsPage() {
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
-      if (statusFilter !== "all" && r.reviewStatus !== statusFilter) {
-        return false;
-      }
       if (!q) {
         return true;
       }
       return (
-        r.facilityName.toLowerCase().includes(q) ||
+        r.name.toLowerCase().includes(q) ||
         r.owner.toLowerCase().includes(q) ||
         r.phone.replace(/\s/g, "").includes(q.replace(/\s/g, "")) ||
         r.fieldWorker.toLowerCase().includes(q) ||
-        r.facilityAccountType.toLowerCase().includes(q)
+        normalizeOutletType(r.type).toLowerCase().includes(q) ||
+        (r.captured_ward ?? r.ward ?? "").toLowerCase().includes(q) ||
+        (r.captured_county ?? r.county ?? "").toLowerCase().includes(q) ||
+        (r.suburb ?? "").toLowerCase().includes(q) ||
+        (r.raw?.landmark ?? "").toLowerCase().includes(q)
       );
     });
-  }, [rows, search, statusFilter]);
+  }, [rows, search]);
 
   React.useEffect(() => {
     setSelectedIds(new Set());
     setBulkAction("");
-  }, [search, statusFilter]);
+  }, [search]);
 
   const allFilteredSelected =
     filtered.length > 0 && filtered.every((r) => selectedIds.has(r.id));
@@ -354,48 +241,33 @@ export default function SubmissionsPage() {
     if (!canReview || !bulkAction || selectedIds.size === 0) {
       return;
     }
+
+    if (bulkAction === "delete") {
+      const count = selectedIds.size;
+      const confirmed = window.confirm(
+        `Delete ${count} selected submission${count === 1 ? "" : "s"}? This cannot be undone.`,
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
     setBulkBusy(true);
     try {
-      const updated = await bulkUpdateOutletStatuses([...selectedIds], bulkAction);
-      const map = new Map(updated.map((row) => [String(row.id), row]));
-      setRows((prev) =>
-        prev.map((row) => {
-          const u = map.get(row.id);
-          return u ? apiRowToSubmission(u) : row;
-        }),
-      );
+      const ids = [...selectedIds];
+      await bulkDeleteOutlets(ids);
+      const deleted = new Set(ids);
+      setRows((prev) => prev.filter((row) => !deleted.has(row.id)));
       setSelectedIds(new Set());
       setBulkAction("");
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Bulk update failed");
+      window.alert(e instanceof Error ? e.message : "Bulk delete failed");
     } finally {
       setBulkBusy(false);
     }
   }
 
-  const stats = React.useMemo(() => {
-    const total = rows.length;
-    const approved = rows.filter((r) => r.reviewStatus === "Approved").length;
-    const pending = rows.filter((r) => r.reviewStatus === "Pending").length;
-    const rejected = rows.filter((r) => r.reviewStatus === "Rejected").length;
-    const pctApproved = total ? ((100 * approved) / total).toFixed(1) : "0";
-    const pctPending = total ? ((100 * pending) / total).toFixed(1) : "0";
-    const pctRejected = total ? ((100 * rejected) / total).toFixed(1) : "0";
-    return { total, approved, pending, rejected, pctApproved, pctPending, pctRejected };
-  }, [rows]);
-
-  async function handleReview(id: string, status: OutletReviewStatus) {
-    setUpdatingId(id);
-    try {
-      const updated = await updateOutletStatus(id, status);
-      const next = apiRowToSubmission(updated);
-      setRows((prev) => prev.map((r) => (r.id === id ? next : r)));
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Update failed");
-    } finally {
-      setUpdatingId(null);
-    }
-  }
+  const stats = React.useMemo(() => ({ total: rows.length }), [rows]);
 
   async function handleImportFile(file: File) {
     setImportBusy(true);
@@ -592,34 +464,13 @@ export default function SubmissionsPage() {
             </div>
           </header>
 
-          <section className="mt-6 grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 xl:grid-cols-4">
+          <section className="mt-6">
             <StatCard
               icon={FileText}
               iconClass="bg-emerald-50 text-emerald-600"
               title="Total Submissions"
               value={loadState === "loading" ? "—" : stats.total.toLocaleString()}
               subtitle="Loaded from API"
-            />
-            <StatCard
-              icon={CheckCircle2}
-              iconClass="bg-blue-50 text-blue-600"
-              title="Approved"
-              value={loadState === "loading" ? "—" : stats.approved.toLocaleString()}
-              subtitle={`${stats.pctApproved}%`}
-            />
-            <StatCard
-              icon={CircleDot}
-              iconClass="bg-amber-50 text-amber-600"
-              title="Under review"
-              value={loadState === "loading" ? "—" : stats.pending.toLocaleString()}
-              subtitle={`${stats.pctPending}%`}
-            />
-            <StatCard
-              icon={XCircle}
-              iconClass="bg-rose-50 text-rose-600"
-              title="Rejected"
-              value={loadState === "loading" ? "—" : stats.rejected.toLocaleString()}
-              subtitle={`${stats.pctRejected}%`}
             />
           </section>
 
@@ -631,13 +482,13 @@ export default function SubmissionsPage() {
 
           {!canReview && loadState === "ok" && rows.length > 0 && (
             <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-              You can view submissions. Only Company Admin, QA Officer, or Super Admin can approve or reject.
+              You can view and edit submissions. Bulk delete requires Company Admin, QA Officer, or Super Admin.
             </p>
           )}
 
           <section className="mt-5 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-              <div className="lg:col-span-4 flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2">
+              <div className="lg:col-span-5 flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2">
                 <Search size={16} className="text-slate-400" />
                 <input
                   className="w-full text-sm outline-none"
@@ -646,22 +497,9 @@ export default function SubmissionsPage() {
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
-              <label className="lg:col-span-2 flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600">
-                <span className="text-slate-400">Status</span>
-                <select
-                  className="w-full bg-transparent text-sm outline-none"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-                >
-                  <option value="all">All</option>
-                  <option value="Pending">Under review</option>
-                  <option value="Approved">Approved</option>
-                  <option value="Rejected">Rejected</option>
-                </select>
-              </label>
               <button
                 type="button"
-                className="lg:col-span-3 inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600"
+                className="lg:col-span-4 inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600"
               >
                 <Calendar size={16} /> Date range (coming soon)
               </button>
@@ -672,6 +510,21 @@ export default function SubmissionsPage() {
                 <Filter size={16} />
               </button>
             </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <SubmissionColumnsButton
+                showPicker={showPicker}
+                onToggle={() => setShowPicker((v) => !v)}
+              />
+            </div>
+            {showPicker && (
+              <SubmissionColumnPicker
+                scope="global"
+                hiddenKeys={hiddenKeys}
+                onToggle={toggleColumn}
+                onReset={resetColumns}
+              />
+            )}
 
             {canReview && (
               <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
@@ -684,18 +537,17 @@ export default function SubmissionsPage() {
                   <select
                     className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[12px] text-slate-800 outline-none"
                     value={bulkAction}
-                    onChange={(e) => setBulkAction((e.target.value || "") as "" | OutletReviewStatus)}
+                    onChange={(e) => setBulkAction((e.target.value || "") as "" | "delete")}
                     disabled={bulkBusy}
                   >
                     <option value="">Bulk actions…</option>
-                    <option value="approved">Approve selected</option>
-                    <option value="rejected">Reject selected</option>
+                    <option value="delete">Delete selected</option>
                   </select>
                 </label>
                 <button
                   type="button"
                   disabled={bulkBusy || selectedIds.size === 0 || !bulkAction}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 bg-red-600 hover:bg-red-700`}
                   onClick={() => void handleBulkApply()}
                 >
                   {bulkBusy ? <Loader2 size={14} className="animate-spin" /> : null}
@@ -722,27 +574,24 @@ export default function SubmissionsPage() {
                         />
                       </th>
                     ) : null}
+                    {visibleCols.map((col) => (
+                      <th
+                        key={col.key}
+                        className="border-b border-slate-100 px-3 py-3 text-left font-medium whitespace-nowrap"
+                      >
+                        {col.label.toUpperCase()}
+                      </th>
+                    ))}
                     <th className="border-b border-slate-100 px-3 py-3 text-left font-medium whitespace-nowrap">
-                      FACILITY NAME
+                      ACTIONS
                     </th>
-                    <th className="border-b border-slate-100 px-3 py-3 text-left font-medium whitespace-nowrap">
-                      ACCOUNT TYPE
-                    </th>
-                    <th className="border-b border-slate-100 px-3 py-3 text-left font-medium whitespace-nowrap">LOCATION</th>
-                    <th className="border-b border-slate-100 px-3 py-3 text-left font-medium whitespace-nowrap">FIELD WORKER</th>
-                    <th className="border-b border-slate-100 px-3 py-3 text-left font-medium whitespace-nowrap">
-                      REGISTRATION
-                    </th>
-                    <th className="border-b border-slate-100 px-3 py-3 text-left font-medium whitespace-nowrap">STATUS</th>
-                    <th className="border-b border-slate-100 px-3 py-3 text-left font-medium whitespace-nowrap">SUBMITTED</th>
-                    <th className="border-b border-slate-100 px-3 py-3 text-left font-medium whitespace-nowrap">ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loadState === "loading" && (
                     <tr>
                       <td
-                        colSpan={canReview ? 9 : 8}
+                        colSpan={(canReview ? 1 : 0) + visibleCols.length + 1}
                         className="px-3 py-10 text-center text-sm text-slate-500"
                       >
                         Loading submissions…
@@ -752,7 +601,7 @@ export default function SubmissionsPage() {
                   {loadState === "ok" && filtered.length === 0 && (
                     <tr>
                       <td
-                        colSpan={canReview ? 9 : 8}
+                        colSpan={(canReview ? 1 : 0) + visibleCols.length + 1}
                         className="px-3 py-10 text-center text-sm text-slate-500"
                       >
                         No submissions match your filters.
@@ -761,86 +610,94 @@ export default function SubmissionsPage() {
                   )}
                   {loadState === "ok" &&
                     filtered.map((row, rowIndex) => (
-                      <tr key={row.id} className={rowIndex % 2 === 0 ? "bg-white" : "bg-slate-50/40"}>
-                        {canReview ? (
-                          <td className="border-b border-slate-100 px-2 py-2.5 align-top">
-                            <input
-                              type="checkbox"
-                              className="mt-1 h-4 w-4 rounded border-slate-300"
-                              checked={selectedIds.has(row.id)}
-                              onChange={() => toggleRowSelected(row.id)}
-                              disabled={bulkBusy}
-                              aria-label={`Select ${row.facilityName}`}
-                            />
-                          </td>
-                        ) : null}
-                        <td className="border-b border-slate-100 px-3 py-2.5">
-                          <div className="flex items-start gap-2.5">
-                            <img
-                              src={row.photo}
-                              alt={row.facilityName}
-                              className="h-10 w-10 rounded-md object-cover"
-                            />
-                            <div>
-                              <div className="text-[12px] font-semibold text-slate-800">{row.facilityName}</div>
-                              <div className="text-[10px] text-slate-500">Owner: {row.owner}</div>
-                              <div className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-slate-500">
-                                <Phone size={10} />
-                                {row.phone}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="border-b border-slate-100 px-3 py-2.5 align-top">
-                          <FacilityAccountTypeBadge type={row.facilityAccountType} />
-                        </td>
-                        <td className="border-b border-slate-100 px-3 py-2.5 align-top">
-                          <div className="text-[11px] text-slate-700">{row.location}</div>
-                          {row.locationSub ? (
-                            <div className="text-[10px] text-slate-500">{row.locationSub}</div>
+                      <tr
+                        key={row.id}
+                        className={rowIndex % 2 === 0 ? "bg-white" : "bg-slate-50/40"}
+                      >
+                          {canReview ? (
+                            <td className="border-b border-slate-100 px-2 py-2.5 align-top">
+                              <input
+                                type="checkbox"
+                                className="mt-1 h-4 w-4 rounded border-slate-300"
+                                checked={selectedIds.has(row.id)}
+                                onChange={() => toggleRowSelected(row.id)}
+                                disabled={bulkBusy}
+                                aria-label={`Select ${row.name}`}
+                              />
+                            </td>
                           ) : null}
-                        </td>
-                        <td className="border-b border-slate-100 px-3 py-2.5 align-top">
-                          <div className="flex items-center gap-2">
-                            <img
-                              src={row.fieldAvatar}
-                              alt={row.fieldWorker}
-                              className="h-7 w-7 rounded-full object-cover"
-                            />
-                            <span className="text-[11px] text-slate-700">{row.fieldWorker}</span>
-                          </div>
-                        </td>
-                        <td className="border-b border-slate-100 px-3 py-2.5 align-top">
-                          <RegistrationBadge registration={row.registration} />
-                        </td>
-                        <td className="border-b border-slate-100 px-3 py-2.5 align-top">
-                          <StatusBadge status={row.reviewStatus} />
-                        </td>
-                        <td className="border-b border-slate-100 px-3 py-2.5 align-top">
-                          <div className="text-[11px] text-slate-700">{row.submittedAt}</div>
-                        </td>
-                        <td className="border-b border-slate-100 px-3 py-2.5 align-top">
-                          <div className="flex flex-col gap-2">
-                            <Link
-                              href={`/admin/submissions/${row.id}`}
-                              className={`inline-flex w-fit items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold ${
-                                row.reviewStatus === "Pending"
-                                  ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-                                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                              }`}
+                          {visibleCols.map((col) => (
+                            <td
+                              key={col.key}
+                              className="border-b border-slate-100 px-3 py-2.5 align-top max-w-[220px]"
                             >
-                              <Eye size={12} /> View
-                            </Link>
-                            <ReviewButtons
-                              row={row}
-                              canReview={canReview}
-                              busy={updatingId === row.id}
-                              onReview={handleReview}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              {col.key === "name" ? (
+                                <div className="flex items-start gap-2.5">
+                                  <img
+                                    src={submissionThumb(row)}
+                                    alt={row.name}
+                                    className="h-10 w-10 rounded-md object-cover shrink-0"
+                                  />
+                                  <div className="min-w-0">
+                                    <div className="text-[12px] font-semibold text-slate-800 truncate">
+                                      {row.name}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500">Owner: {row.owner}</div>
+                                    <div className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-slate-500">
+                                      <Phone size={10} />
+                                      {row.phone || "—"}
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : col.key === "type" ? (
+                                <FacilityAccountTypeBadge type={row.type} />
+                              ) : col.key === "fieldWorker" ? (
+                                <div className="flex items-center gap-2">
+                                  <img
+                                    src={`https://ui-avatars.com/api/?size=80&name=${encodeURIComponent(row.fieldWorker || "?")}`}
+                                    alt={row.fieldWorker}
+                                    className="h-7 w-7 rounded-full object-cover shrink-0"
+                                  />
+                                  <span className="text-[11px] text-slate-700">{row.fieldWorker || "—"}</span>
+                                </div>
+                              ) : col.key === "registration" ? (
+                                <RegistrationBadge
+                                  registration={
+                                    row.accountStatus === "Unregistered"
+                                      ? "Unregistered"
+                                      : "Registered"
+                                  }
+                                />
+                              ) : (
+                                <div
+                                  className="text-[11px] text-slate-700 truncate"
+                                  title={submissionCellValue(row, col.key)}
+                                >
+                                  {submissionCellValue(row, col.key)}
+                                </div>
+                              )}
+                            </td>
+                          ))}
+                          <td className="border-b border-slate-100 px-3 py-2.5 align-top">
+                            <div className="flex items-center gap-1">
+                              <Link
+                                href={`/admin/submissions/${row.id}`}
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
+                                title="View submission"
+                              >
+                                <Eye size={12} /> View
+                              </Link>
+                              <Link
+                                href={`/admin/submissions/${row.id}?edit=1`}
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
+                                title="Edit submission"
+                              >
+                                <Pencil size={12} /> Edit
+                              </Link>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
                 </tbody>
               </table>
             </div>

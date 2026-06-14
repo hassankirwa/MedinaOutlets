@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import { font } from "../theme/fonts";
 
-export function NewOutletStepBar({ step, total = 6 }: { step: number; total?: number }) {
+export function NewOutletStepBar({ step, total = 5 }: { step: number; total?: number }) {
   const progress = Math.max(0, Math.min(100, (step / total) * 100));
 
   return (

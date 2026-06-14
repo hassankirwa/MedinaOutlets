@@ -78,6 +78,7 @@ class User extends Authenticatable implements CanResetPasswordContract
             'channels' => [
                 'in_app' => true,
                 'email' => true,
+                'push' => false,
             ],
         ];
     }
@@ -85,12 +86,46 @@ class User extends Authenticatable implements CanResetPasswordContract
     /**
      * @return array<string, mixed>
      */
+    public static function defaultCollectorNotificationPreferences(): array
+    {
+        return [
+            'submission_review' => true,
+            'project_assignment' => true,
+            'sync_reminder' => true,
+            'channels' => [
+                'in_app' => true,
+                'email' => false,
+                'push' => false,
+            ],
+        ];
+    }
+
+    public function isFieldCollector(): bool
+    {
+        return $this->role?->slug === 'field_collector';
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function resolvedNotificationPreferences(): array
     {
+        $defaults = $this->isFieldCollector()
+            ? self::defaultCollectorNotificationPreferences()
+            : self::defaultNotificationPreferences();
+
         return array_replace_recursive(
-            self::defaultNotificationPreferences(),
+            $defaults,
             $this->notification_preferences ?? []
         );
+    }
+
+    /**
+     * @return HasMany<DeviceToken, $this>
+     */
+    public function deviceTokens(): HasMany
+    {
+        return $this->hasMany(DeviceToken::class);
     }
 
     /**
@@ -166,5 +201,13 @@ class User extends Authenticatable implements CanResetPasswordContract
     {
         return $this->belongsToMany(Project::class, 'project_user')
             ->withPivot(['assigned_at', 'assigned_by']);
+    }
+
+    /**
+     * @return BelongsToMany<Branch, $this>
+     */
+    public function branches(): BelongsToMany
+    {
+        return $this->belongsToMany(Branch::class, 'branch_field_workers');
     }
 }

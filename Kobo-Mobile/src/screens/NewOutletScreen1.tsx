@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { KeyboardAvoidingView, Platform, StyleSheet, Text } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NewOutletDropdownModal, NewOutletSelectField, formatOptionLabel } from "../components/NewOutletFields";
+import { NewOutletFormScreen } from "../components/NewOutletFormScreen";
 import { NewOutletFooterButtons } from "../components/NewOutletFooterButtons";
 import { NewOutletHeader } from "../components/NewOutletHeader";
 import { NewOutletStepBar } from "../components/NewOutletStepBar";
@@ -29,17 +30,20 @@ export function NewOutletScreen1({ onBack, onNext }: { onBack: () => void; onNex
   );
 
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
       <NewOutletHeader topInset={insets.top} onBack={onBack} />
       <NewOutletStepBar step={1} />
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <NewOutletFormScreen contentContainerStyle={styles.scroll}>
         <Text style={styles.title}>Outlet Classification</Text>
         <Text style={styles.subtitle}>Tell us more about this outlet</Text>
         <NewOutletSelectField label="Type of Account" value={formatOptionLabel(typeOfAccount)} onPress={() => setOpenDropdown("type")} required />
         <NewOutletSelectField label="Medical Facility Status" value={formatOptionLabel(medicalFacilityStatus)} onPress={() => setOpenDropdown("status")} required />
         <NewOutletSelectField label={"Outlet Serviced By\nMedolab / Medina"} value={formatOptionLabel(outletServicedByMed)} onPress={() => setOpenDropdown("serviced")} required />
         {activeCategory ? <NewOutletSelectField label={activeCategory.label} value={formatOptionLabel(selectedCategory)} onPress={() => setOpenDropdown("category")} required /> : null}
-      </ScrollView>
+      </NewOutletFormScreen>
       <NewOutletFooterButtons onNext={onNext} nextDisabled={!isComplete} showBack={false} />
       <NewOutletDropdownModal
         visible={openDropdown === "type"}
@@ -89,13 +93,13 @@ export function NewOutletScreen1({ onBack, onNext }: { onBack: () => void; onNex
           setOpenDropdown(null);
         }}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#F6F7FB" },
-  scroll: { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 120, gap: 14 },
+  root: { flex: 1, backgroundColor: "#F6F7FB", overflow: "hidden" },
+  scroll: { paddingHorizontal: 16, paddingTop: 18, gap: 14 },
   title: { color: "#1E293B", fontSize: 31, fontFamily: font.extraBold },
   subtitle: { color: "#475569", fontSize: 19, marginBottom: 6, fontFamily: font.regular },
 });

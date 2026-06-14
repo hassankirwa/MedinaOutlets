@@ -23,6 +23,7 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "pan",
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -34,6 +35,15 @@
         "expo-image-picker",
         {
           "photosPermission": "Allow $(PRODUCT_NAME) to choose your profile photo from your library."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#178E47",
+          "defaultChannel": "default",
+          "sounds": []
         }
       ]
     ],

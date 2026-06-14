@@ -1,4 +1,8 @@
-Kobo stack — API base URL for local Laravel (php artisan serve defaults to http://127.0.0.1:8000)
+Kobo stack — API base URL for local Laravel
+
+  Start the API so phones on your Wi-Fi can reach it:
+    php artisan serve --host=0.0.0.0
+  (Default `php artisan serve` binds to 127.0.0.1 only — mobile devices cannot connect.)
 
 Kobo-Frontend (Next.js)
   Set NEXT_PUBLIC_API_URL in .env.local to your Laravel origin.

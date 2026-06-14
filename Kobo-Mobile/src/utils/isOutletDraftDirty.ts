@@ -11,9 +11,13 @@ export function isOutletDraftDirty(draft: NewOutletDraft): boolean {
     draft.facilityName.trim() ||
     draft.ownerName.trim() ||
     draft.businessPhone.trim() ||
+    draft.alternativePhone.trim() ||
     draft.email.trim() ||
     draft.remarks.trim()
   ) {
+    return true;
+  }
+  if (draft.gpsCapturedAt.trim()) {
     return true;
   }
   if (draft.photos.length > 0) {

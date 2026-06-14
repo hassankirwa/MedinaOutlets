@@ -2,14 +2,14 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import {
   Calendar,
   ChevronDown,
-  CheckCircle2,
-  CircleDot,
-  Loader2,
+  Eye,
   MapPin,
   Menu,
+  Pencil,
   Store,
   Stethoscope,
   Leaf,
@@ -17,16 +17,13 @@ import {
   Hospital,
   User,
   Phone,
-  XCircle,
+  Loader2,
 } from "lucide-react";
 import { AdminShell } from "../dashboard/_components/AdminShell";
 import { NotificationBell } from "@/components/NotificationBell";
 import {
+  fetchBranches,
   fetchOutletsApi,
-  updateOutletStatus,
-  canReviewOutletSubmissions,
-  readUserProfile,
-  type OutletReviewStatus,
 } from "@/lib/api";
 import { apiOutletToPoint, type ApiOutletRow } from "@/lib/outletTransform";
 import { OUTLETS, type OutletPoint } from "@/components/maps/outlet-map-data";
@@ -50,39 +47,15 @@ function buildTypeStats(outlets: OutletPoint[]) {
   };
 }
 
-function reviewLabel(status: string | undefined): string {
-  const s = (status ?? "pending").toLowerCase();
-  if (s === "approved") {
-    return "Approved";
-  }
-  if (s === "rejected") {
-    return "Rejected";
-  }
-  return "Pending";
-}
-
 function OutletDetailsCard({
   outlet,
-  canReview,
-  updating,
-  onReview,
+  detail,
 }: {
   outlet: OutletPoint;
-  canReview: boolean;
-  updating: boolean;
-  onReview: (id: string, status: OutletReviewStatus) => void;
+  detail?: ApiOutletRow | null;
 }) {
-  const rev = reviewLabel(outlet.status);
-  const revCls =
-    rev === "Approved"
-      ? "bg-emerald-50 text-emerald-700"
-      : rev === "Rejected"
-        ? "bg-rose-50 text-rose-700"
-        : "bg-amber-50 text-amber-700";
-  const RevIcon = rev === "Approved" ? CheckCircle2 : rev === "Rejected" ? XCircle : CircleDot;
-
   return (
-    <aside className="w-full rounded-2xl border border-slate-100 bg-white p-4 shadow-sm xl:w-[320px]">
+    <aside className="w-full shrink-0 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm xl:max-w-[320px]">
       <div className="mb-3 flex items-start justify-between">
         <div>
           <h3 className="text-[16px] font-semibold text-slate-900">{outlet.name}</h3>
@@ -108,13 +81,6 @@ function OutletDetailsCard({
 
       <div className="space-y-3 text-[12px] text-slate-700">
         <div className="flex justify-between gap-3">
-          <span className="text-slate-500">Review status</span>
-          <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium ${revCls}`}>
-            <RevIcon size={13} />
-            {rev}
-          </span>
-        </div>
-        <div className="flex justify-between gap-3">
           <span className="text-slate-500">Type</span>
           <span className="font-medium">{outlet.type}</span>
         </div>
@@ -131,8 +97,24 @@ function OutletDetailsCard({
           <span className="font-medium">{outlet.phone}</span>
         </div>
         <div>
-          <span className="text-slate-500">Location</span>
-          <p className="mt-1 text-right font-medium">{outlet.location}</p>
+          <span className="text-slate-500">Area / Subcounty</span>
+          <p className="mt-1 break-words text-right font-medium">{detail?.suburb ?? "—"}</p>
+        </div>
+        <div>
+          <span className="text-slate-500">Ward</span>
+          <p className="mt-1 break-words text-right font-medium">
+            {detail?.captured_ward ?? detail?.ward ?? "—"}
+          </p>
+        </div>
+        <div>
+          <span className="text-slate-500">County</span>
+          <p className="mt-1 break-words text-right font-medium">
+            {detail?.captured_county ?? detail?.county ?? "—"}
+          </p>
+        </div>
+        <div>
+          <span className="text-slate-500">Landmark</span>
+          <p className="mt-1 break-words text-right font-medium">{detail?.raw?.landmark ?? "—"}</p>
         </div>
         <div className="flex justify-between gap-3">
           <span className="text-slate-500">Field Worker</span>
@@ -148,95 +130,75 @@ function OutletDetailsCard({
         </div>
       </div>
 
-      {canReview ? (
-        <div className="mt-4 flex flex-col gap-2">
-          <p className="text-[11px] font-medium text-slate-500">Review submission</p>
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              disabled={updating || rev === "Approved"}
-              onClick={() => onReview(outlet.id, "approved")}
-              className="rounded-lg border border-emerald-200 bg-emerald-50 py-2 text-[11px] font-semibold text-emerald-800 disabled:opacity-50"
-            >
-              {updating ? <Loader2 size={14} className="mx-auto animate-spin" /> : "Approve"}
-            </button>
-            <button
-              type="button"
-              disabled={updating || rev === "Rejected"}
-              onClick={() => onReview(outlet.id, "rejected")}
-              className="rounded-lg border border-rose-200 bg-rose-50 py-2 text-[11px] font-semibold text-rose-800 disabled:opacity-50"
-            >
-              Reject
-            </button>
-            <button
-              type="button"
-              disabled={updating || rev === "Pending"}
-              onClick={() => onReview(outlet.id, "pending")}
-              className="rounded-lg border border-slate-200 bg-white py-2 text-[11px] font-semibold text-slate-700 disabled:opacity-50"
-            >
-              Pending
-            </button>
-          </div>
-        </div>
-      ) : (
-        <p className="mt-4 text-[11px] text-slate-500">Review actions require Company Admin, QA Officer, or Super Admin.</p>
-      )}
+      <div className="mt-4 flex items-center gap-2">
+        <Link
+          href={`/admin/submissions/${outlet.id}`}
+          className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white py-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          <Eye size={13} /> View
+        </Link>
+        <Link
+          href={`/admin/submissions/${outlet.id}?edit=1`}
+          className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white py-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          <Pencil size={13} /> Edit
+        </Link>
+      </div>
     </aside>
   );
 }
 
 export default function MapViewPage() {
-  const [outlets, setOutlets] = React.useState<OutletPoint[]>(OUTLETS);
-  const [selectedOutletId, setSelectedOutletId] = React.useState(OUTLETS[0].id);
-  const [usingMock, setUsingMock] = React.useState(true);
-  const [updatingId, setUpdatingId] = React.useState<string | null>(null);
+  const [outlets, setOutlets] = React.useState<OutletPoint[]>([]);
+  const [outletDetails, setOutletDetails] = React.useState<ApiOutletRow[]>([]);
+  const [selectedOutletId, setSelectedOutletId] = React.useState("");
+  const [loading, setLoading] = React.useState(true);
+  const [usingMock, setUsingMock] = React.useState(false);
+  const [branchFilter, setBranchFilter] = React.useState("");
+  const [branches, setBranches] = React.useState<Array<{ id: string; name: string }>>([]);
 
-  const profile = readUserProfile();
-  const canReview = canReviewOutletSubmissions(profile?.role?.slug);
+  React.useEffect(() => {
+    void fetchBranches().then((r) => setBranches(r.branches));
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
     void (async () => {
+      setLoading(true);
       try {
-        const raw = await fetchOutletsApi();
+        const raw = await fetchOutletsApi(branchFilter ? { branch_id: branchFilter } : undefined);
         if (cancelled) {
           return;
         }
         const pts = raw.map(apiOutletToPoint);
         if (pts.length > 0) {
           setOutlets(pts);
+          setOutletDetails(raw);
           setSelectedOutletId(pts[0].id);
           setUsingMock(false);
         } else {
           setOutlets([]);
+          setOutletDetails([]);
           setSelectedOutletId("");
           setUsingMock(false);
         }
       } catch {
         if (!cancelled) {
           setOutlets(OUTLETS);
+          setOutletDetails([]);
           setSelectedOutletId(OUTLETS[0].id);
           setUsingMock(true);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  async function handleReview(outletId: string, status: OutletReviewStatus) {
-    setUpdatingId(outletId);
-    try {
-      const updated = await updateOutletStatus(outletId, status);
-      const pt = apiOutletToPoint(updated);
-      setOutlets((prev) => prev.map((o) => (o.id === pt.id ? pt : o)));
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Update failed");
-    } finally {
-      setUpdatingId(null);
-    }
-  }
+  }, [branchFilter]);
 
   const stats = React.useMemo(() => buildTypeStats(outlets), [outlets]);
   const outletTypeStats = [
@@ -250,6 +212,10 @@ export default function MapViewPage() {
 
   const selectedOutlet =
     outlets.find((outlet) => outlet.id === selectedOutletId) ?? outlets[0] ?? null;
+  const selectedDetail =
+    outletDetails.find((row) => row.id === selectedOutletId) ??
+    outletDetails[0] ??
+    null;
 
   return (
     <AdminShell>
@@ -272,12 +238,14 @@ export default function MapViewPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <button className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] text-slate-700">
-                <MapPin size={14} /> Nairobi County <ChevronDown size={14} className="text-slate-400" />
-              </button>
-              <button className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] text-slate-700">
-                <Calendar size={14} /> May 1 - May 31, 2026 <ChevronDown size={14} className="text-slate-400" />
-              </button>
+              <select
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] text-slate-700"
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+              >
+                <option value="">All Branches</option>
+                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
               <div className="shrink-0">
                 <NotificationBell />
               </div>
@@ -295,7 +263,9 @@ export default function MapViewPage() {
                     </span>
                     <div>
                       <p className="text-[10px] leading-tight text-slate-500">{item.title}</p>
-                      <p className="mt-0.5 text-[28px] leading-none font-bold text-slate-900">{item.value.toLocaleString()}</p>
+                      <p className="mt-0.5 text-[28px] leading-none font-bold text-slate-900">
+                        {loading ? "—" : item.value.toLocaleString()}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -303,29 +273,38 @@ export default function MapViewPage() {
             })}
           </section>
 
-          {usingMock ? (
+          {usingMock && !loading ? (
             <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               Showing demo map data — API unavailable or no outlets returned.
             </p>
           ) : null}
 
-          <section className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_minmax(0,280px)] xl:grid-cols-[1fr_280px]">
-            <OutletMapViewMap
-              outlets={outlets}
-              selectedOutletId={selectedOutlet?.id ?? ""}
-              onSelectOutlet={setSelectedOutletId}
-            />
-            {selectedOutlet ? (
-              <OutletDetailsCard
-                outlet={selectedOutlet}
-                canReview={canReview}
-                updating={updatingId === selectedOutlet.id}
-                onReview={handleReview}
-              />
+          <section className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            {loading ? (
+              <div className="col-span-full flex min-h-[420px] flex-col items-center justify-center gap-3 rounded-2xl border border-slate-100 bg-white text-slate-500">
+                <Loader2 size={28} className="animate-spin text-emerald-600" />
+                <p className="text-sm">Loading map data…</p>
+              </div>
             ) : (
-              <aside className="flex min-h-[200px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white p-4 text-sm text-slate-500">
-                No outlets to display.
-              </aside>
+              <>
+                <div className="min-w-0">
+                  <OutletMapViewMap
+                    outlets={outlets}
+                    selectedOutletId={selectedOutlet?.id ?? ""}
+                    onSelectOutlet={setSelectedOutletId}
+                  />
+                </div>
+                {selectedOutlet ? (
+                  <OutletDetailsCard
+                    outlet={selectedOutlet}
+                    detail={selectedDetail}
+                  />
+                ) : (
+                  <aside className="flex min-h-[200px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white p-4 text-sm text-slate-500">
+                    No outlets to display.
+                  </aside>
+                )}
+              </>
             )}
           </section>
         </>

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
 use App\Models\County;
 use App\Models\Outlet;
 use App\Models\Role;
@@ -70,6 +71,10 @@ class FieldWorkerController extends Controller
             $county = (string) ($topCounties->get($collector->id) ?? '—');
         }
 
+        $branches = $collector->relationLoaded('branches')
+            ? $collector->branches->pluck('name')->all()
+            : $collector->branches()->pluck('name')->all();
+
         return [
             'id' => (string) $collector->id,
             'name' => $collector->name,
@@ -77,6 +82,8 @@ class FieldWorkerController extends Controller
             'phone' => $collector->phone ?? '—',
             'email' => $collector->email,
             'county' => $county,
+            'assigned_branches' => $branches,
+            'branch' => $branches[0] ?? '—',
             'projects' => $wc,
             'outlets_collected' => $outletsCollected,
             'this_month' => $thisMonth,
@@ -106,11 +113,15 @@ class FieldWorkerController extends Controller
         }
 
         $query = User::query()
-            ->with('role')
+            ->with(['role', 'branches'])
             ->where('role_id', $collectorRoleId);
 
         if ($user->role?->slug !== 'super_admin') {
             $query->where('company_id', $user->company_id);
+        }
+
+        if ($request->filled('branch_id')) {
+            $query->whereHas('branches', fn ($q) => $q->where('branches.id', (int) $request->query('branch_id')));
         }
 
         if ($user->role?->slug === 'field_collector') {
@@ -192,6 +203,8 @@ class FieldWorkerController extends Controller
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'phone' => ['required', 'string', 'max:32'],
             'county_id' => ['nullable', 'integer', 'exists:counties,id'],
+            'branch_ids' => ['nullable', 'array'],
+            'branch_ids.*' => ['integer', 'exists:branches,id'],
         ];
 
         if ($admin->role?->slug === 'super_admin') {
@@ -225,11 +238,15 @@ class FieldWorkerController extends Controller
             'role_id' => (int) $collectorRoleId,
             'account_status' => 'active',
             'home_county' => $homeCountyName,
-            'notification_preferences' => User::defaultNotificationPreferences(),
+            'notification_preferences' => User::defaultCollectorNotificationPreferences(),
             'security_preferences' => User::defaultSecurityPreferences(),
         ]);
 
-        $newUser->load('role');
+        if (! empty($data['branch_ids'])) {
+            $newUser->branches()->sync($data['branch_ids']);
+        }
+
+        $newUser->load(['role', 'branches']);
 
         $invitationSent = Password::sendResetLink(['email' => $newUser->email]) === Password::RESET_LINK_SENT;
 
@@ -273,6 +290,8 @@ class FieldWorkerController extends Controller
             'phone' => ['sometimes', 'string', 'max:32'],
             'county_id' => ['nullable', 'integer', 'exists:counties,id'],
             'account_status' => ['sometimes', 'string', Rule::in(['active', 'inactive', 'suspended'])],
+            'branch_ids' => ['nullable', 'array'],
+            'branch_ids.*' => ['integer', 'exists:branches,id'],
         ]);
 
         if (array_key_exists('county_id', $validated)) {
@@ -282,10 +301,18 @@ class FieldWorkerController extends Controller
             unset($validated['county_id']);
         }
 
+        $branchIds = $validated['branch_ids'] ?? null;
+        unset($validated['branch_ids']);
+
         $worker->fill($validated);
         $worker->save();
+
+        if ($branchIds !== null) {
+            $worker->branches()->sync($branchIds);
+        }
+
         $worker->refresh();
-        $worker->load('role');
+        $worker->load(['role', 'branches']);
 
         $emptyPc = collect();
         $emptyTc = collect();

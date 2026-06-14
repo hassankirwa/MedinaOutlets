@@ -24,6 +24,7 @@ import {
   createFieldWorker,
   deactivateFieldWorker,
   fetchCompaniesList,
+  fetchBranches,
   fetchCounties,
   fetchFieldWorkers,
   readUserProfile,
@@ -42,6 +43,7 @@ type FieldWorker = {
   phone: string;
   email: string;
   county: string;
+  branch: string;
   projects: number;
   outletsCollected: number;
   thisMonth: number;
@@ -57,6 +59,7 @@ function mapApiWorker(w: FieldWorkerRowApi): FieldWorker {
     phone: w.phone,
     email: w.email,
     county: w.county,
+    branch: w.branch ?? w.assigned_branches?.[0] ?? "—",
     projects: w.projects,
     outletsCollected: w.outlets_collected,
     thisMonth: w.this_month,
@@ -124,6 +127,8 @@ export default function FieldWorkersPage() {
   const [addEmail, setAddEmail] = React.useState("");
   const [addPhone, setAddPhone] = React.useState("");
   const [addCountyId, setAddCountyId] = React.useState("");
+  const [addBranchIds, setAddBranchIds] = React.useState<number[]>([]);
+  const [branches, setBranches] = React.useState<Array<{ id: string; name: string }>>([]);
   const [addCompanyId, setAddCompanyId] = React.useState("");
   const [addSubmitting, setAddSubmitting] = React.useState(false);
   const [addError, setAddError] = React.useState<string | null>(null);
@@ -165,13 +170,15 @@ export default function FieldWorkersPage() {
     void (async () => {
       setLookupLoading(true);
       try {
-        const [c, co] = await Promise.all([
+        const [c, co, br] = await Promise.all([
           fetchCounties(),
           isSuperAdmin ? fetchCompaniesList() : Promise.resolve([] as CompanyListRow[]),
+          fetchBranches(),
         ]);
         if (cancelled) {
           return;
         }
+        setBranches(br.branches);
         setCounties(c);
         setCompanies(co);
       } catch {
@@ -215,6 +222,7 @@ export default function FieldWorkersPage() {
         email: addEmail.trim(),
         phone: addPhone.trim(),
         county_id: addCountyId ? Number(addCountyId) : null,
+        branch_ids: addBranchIds,
         ...(isSuperAdmin ? { company_id: Number(addCompanyId) } : {}),
       });
       await reloadWorkers();
@@ -345,6 +353,7 @@ export default function FieldWorkersPage() {
                     <th className="border-b border-slate-100 px-3 py-3 text-left font-medium">FIELD WORKER</th>
                     <th className="border-b border-slate-100 px-3 py-3 text-left font-medium">PHONE</th>
                     <th className="border-b border-slate-100 px-3 py-3 text-left font-medium">EMAIL</th>
+                    <th className="border-b border-slate-100 px-3 py-3 text-left font-medium">BRANCH</th>
                     <th className="border-b border-slate-100 px-3 py-3 text-left font-medium">COUNTY</th>
                     <th className="border-b border-slate-100 px-3 py-3 text-left font-medium">PROJECTS</th>
                     <th className="border-b border-slate-100 px-3 py-3 text-left font-medium">OUTLETS COLLECTED</th>
@@ -397,6 +406,7 @@ export default function FieldWorkersPage() {
                           </span>
                         </td>
                         <td className="border-b border-slate-100 px-3 py-2.5 text-[11px] text-slate-700">{worker.email}</td>
+                        <td className="border-b border-slate-100 px-3 py-2.5 text-[11px] text-slate-700">{worker.branch}</td>
                         <td className="border-b border-slate-100 px-3 py-2.5 text-[11px] text-slate-700">{worker.county}</td>
                         <td className="border-b border-slate-100 px-3 py-2.5 text-[11px] font-semibold text-slate-800">
                           {worker.projects}
@@ -524,6 +534,30 @@ export default function FieldWorkersPage() {
                         required
                         autoComplete="email"
                       />
+                    </label>
+                    <label className="block space-y-1 md:col-span-2">
+                      <span className="text-[12px] font-medium text-slate-700">Assigned branches</span>
+                      <div className="flex flex-wrap gap-2">
+                        {branches.map((b) => (
+                          <button
+                            key={b.id}
+                            type="button"
+                            onClick={() =>
+                              setAddBranchIds((prev) =>
+                                prev.includes(Number(b.id))
+                                  ? prev.filter((id) => id !== Number(b.id))
+                                  : [...prev, Number(b.id)],
+                              )
+                            }
+                            className={[
+                              "rounded-full px-3 py-1 text-xs",
+                              addBranchIds.includes(Number(b.id)) ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-700",
+                            ].join(" ")}
+                          >
+                            {b.name}
+                          </button>
+                        ))}
+                      </div>
                     </label>
                     <label className="block space-y-1 md:col-span-2">
                       <span className="text-[12px] font-medium text-slate-700">Home county (optional)</span>

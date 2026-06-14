@@ -1,110 +1,179 @@
 "use client";
 
 import * as React from "react";
-import {
-  Calendar,
-  ChevronDown,
-  FileDown,
-  FileSpreadsheet,
-  Menu,
-} from "lucide-react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Eye, Loader2, Menu } from "lucide-react";
 import { AdminShell } from "../dashboard/_components/AdminShell";
 import { NotificationBell } from "@/components/NotificationBell";
-
-const reportRows = [
-  ["Monthly Outlet Performance", "PDF", "May 31, 2026", "Auto"],
-  ["Field Worker Productivity", "XLSX", "May 31, 2026", "Manual"],
-  ["Data Quality Summary", "CSV", "May 30, 2026", "Auto"],
-  ["County Coverage Snapshot", "PDF", "May 29, 2026", "Manual"],
-];
+import { fetchBranches, fetchProjects, fetchReports, type ReportTypeRow } from "@/lib/api";
+import {
+  buildReportViewHref,
+  buildReportsListHref,
+  filtersFromSearchParams,
+  type ReportFilters,
+} from "@/lib/reportFilters";
 
 export default function ReportsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [reports, setReports] = React.useState<ReportTypeRow[]>([]);
+  const [branches, setBranches] = React.useState<Array<{ id: string; name: string }>>([]);
+  const [projects, setProjects] = React.useState<Array<{ id: string; name: string }>>([]);
+  const [filters, setFilters] = React.useState<ReportFilters>(() =>
+    filtersFromSearchParams(searchParams),
+  );
+  const [loadingCatalog, setLoadingCatalog] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    setFilters(filtersFromSearchParams(searchParams));
+  }, [searchParams]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setLoadingCatalog(true);
+      try {
+        const [reportRes, branchRes, projectRes] = await Promise.all([
+          fetchReports(),
+          fetchBranches(),
+          fetchProjects(),
+        ]);
+        if (!cancelled) {
+          setReports(reportRes.reports);
+          setBranches(branchRes.branches);
+          setProjects(
+            (projectRes.projects ?? []).map((p) => ({
+              id: p.id,
+              name: p.name,
+            })),
+          );
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load reports.");
+        }
+      } finally {
+        if (!cancelled) setLoadingCatalog(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const syncFiltersToUrl = (next: ReportFilters) => {
+    setFilters(next);
+    router.replace(buildReportsListHref(next));
+  };
+
   return (
     <AdminShell>
       {({ toggleSidebar }) => (
         <>
-          <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <button
-                type="button"
-                className="mt-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700"
-                onClick={toggleSidebar}
-                aria-label="Open menu"
-              >
+          <header className="mb-6 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={toggleSidebar} className="rounded-lg border p-2 lg:hidden">
                 <Menu size={18} />
               </button>
-              <div className="min-w-0">
-                <h1 className="text-[22px] font-bold text-slate-900">Reports</h1>
-                <p className="text-[12px] text-slate-500">
-                  Generate and download operational reports
-                </p>
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900">Reports</h1>
+                <p className="text-sm text-slate-500">Choose filters, then open a report to review before exporting</p>
               </div>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="shrink-0">
-                <NotificationBell />
-              </div>
-              <button className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
-                <FileSpreadsheet size={15} />
-                Export XLSX
-              </button>
-              <button className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-[12px] font-semibold text-white shadow-sm hover:bg-emerald-700">
-                <FileDown size={15} />
-                Export CSV
-              </button>
-            </div>
+            <NotificationBell />
           </header>
 
-          <section className="mt-5 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-            <div className="mb-4 flex flex-wrap items-center gap-3">
-              <button className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600">
-                <Calendar size={16} />
-                May 1, 2026 - May 31, 2026
-                <ChevronDown size={14} className="text-slate-400" />
-              </button>
-              <button className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600">
-                Report Type
-                <ChevronDown size={14} className="text-slate-400" />
-              </button>
-            </div>
+          <div className="mb-4 flex flex-wrap gap-2">
+            <select
+              className="rounded-lg border px-3 py-2 text-sm"
+              value={filters.branch_id}
+              onChange={(e) => syncFiltersToUrl({ ...filters, branch_id: e.target.value })}
+            >
+              <option value="">All branches</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="rounded-lg border px-3 py-2 text-sm"
+              value={filters.project_id}
+              onChange={(e) => syncFiltersToUrl({ ...filters, project_id: e.target.value })}
+            >
+              <option value="">All projects</option>
+              {projects.map((p) => (
+                <option key={p.id} value={String(p.id)}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="date"
+              className="rounded-lg border px-3 py-2 text-sm"
+              value={filters.from}
+              onChange={(e) => syncFiltersToUrl({ ...filters, from: e.target.value })}
+              aria-label="From date"
+            />
+            <input
+              type="date"
+              className="rounded-lg border px-3 py-2 text-sm"
+              value={filters.to}
+              onChange={(e) => syncFiltersToUrl({ ...filters, to: e.target.value })}
+              aria-label="To date"
+            />
+          </div>
 
-            <div className="-mx-1 overflow-x-auto rounded-xl border border-slate-100 sm:mx-0">
-              <table className="min-w-[640px] w-full text-sm">
-                <thead className="bg-slate-50 text-slate-500">
+          {error ? (
+            <p className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+              {error}
+            </p>
+          ) : null}
+
+          <div className="overflow-x-auto rounded-2xl border bg-white shadow-sm">
+            <table className="min-w-[640px] w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 text-left">Report</th>
+                  <th className="px-4 py-3 text-left">Formats</th>
+                  <th className="px-4 py-3 text-left">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingCatalog ? (
                   <tr>
-                    <th className="px-4 py-3 text-left font-medium">Report Name</th>
-                    <th className="px-4 py-3 text-left font-medium">Format</th>
-                    <th className="px-4 py-3 text-left font-medium">Generated At</th>
-                    <th className="px-4 py-3 text-left font-medium">Type</th>
-                    <th className="px-4 py-3 text-left font-medium">Actions</th>
+                    <td colSpan={3} className="px-4 py-10 text-center text-slate-500">
+                      <Loader2 size={20} className="mx-auto mb-2 animate-spin text-emerald-600" />
+                      Loading reports…
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {reportRows.map((row) => (
-                    <tr key={row[0]} className="border-t border-slate-100">
-                      <td className="px-4 py-3 text-slate-800">{row[0]}</td>
-                      <td className="px-4 py-3 text-slate-600">{row[1]}</td>
-                      <td className="px-4 py-3 text-slate-600">{row[2]}</td>
-                      <td className="px-4 py-3 text-slate-600">{row[3]}</td>
+                ) : (
+                  reports.map((row) => (
+                    <tr key={row.id} className="border-t border-slate-100">
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <button className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50">
-                            <FileSpreadsheet size={13} />
-                            XLSX
-                          </button>
-                          <button className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-700 hover:bg-emerald-100">
-                            <FileDown size={13} />
-                            CSV
-                          </button>
-                        </div>
+                        <p className="font-medium text-slate-900">{row.name}</p>
+                        {row.description ? (
+                          <p className="mt-0.5 text-xs text-slate-500">{row.description}</p>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{row.format}</td>
+                      <td className="px-4 py-3">
+                        <Link
+                          href={buildReportViewHref(row.type, filters)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                        >
+                          <Eye size={13} />
+                          View report
+                        </Link>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </AdminShell>

@@ -20,10 +20,17 @@ class OutletResource extends JsonResource
 
         return [
             'id' => (string) $o->id,
+            'project_id' => $o->project_id ? (string) $o->project_id : null,
+            'branch_id' => $o->branch_id ? (string) $o->branch_id : null,
+            'branch' => $o->relationLoaded('branch') ? ($o->branch?->name ?? '') : '',
+            'county_id' => $o->county_id ? (string) $o->county_id : null,
+            'county' => $this->countyLabel($o),
+            'ward' => $this->wardLabel($o),
             'name' => $o->facility_name,
             'type' => $o->outlet_type,
             'owner' => $o->owner_name,
             'phone' => $o->business_phone ?? '',
+            'alternative_phone' => $o->alternative_phone ?? '',
             'location' => $this->locationLabel($o),
             'fieldWorker' => $creator?->name ?? '',
             'accountStatus' => $this->accountStatusLabel($o),
@@ -31,6 +38,19 @@ class OutletResource extends JsonResource
             'submittedAt' => $o->created_at?->format('M j, Y g:i A') ?? '',
             'lat' => (float) $o->latitude,
             'lng' => (float) $o->longitude,
+            'captured_place_name' => $o->captured_place_name,
+            'reverse_geocoded_address' => $o->reverse_geocoded_address,
+            'captured_address' => $o->captured_address,
+            'road' => $o->road,
+            'suburb' => $o->suburb,
+            'captured_ward' => $o->captured_ward,
+            'captured_county' => $o->captured_county,
+            'region' => $o->region,
+            'country' => $o->country,
+            'gps_accuracy_meters' => $o->gps_accuracy_meters,
+            'photos_count' => is_array($o->photos) ? count($o->photos) : 0,
+            'has_gps' => $o->latitude !== null && $o->longitude !== null,
+            'has_photos' => is_array($o->photos) && count($o->photos) > 0,
             'status' => $o->status,
             'ward_id' => $o->ward_id,
             /** ISO8601 for mobile / programmatic sorting (submittedAt stays human-readable). */
@@ -47,15 +67,67 @@ class OutletResource extends JsonResource
                 'landmark' => $o->landmark,
                 'remarks' => $o->remarks,
                 'email' => $o->email,
+                'alternative_phone' => $o->alternative_phone,
             ],
         ];
     }
 
+    private function countyLabel(Outlet $o): string
+    {
+        if ($o->captured_county) {
+            return $o->captured_county;
+        }
+
+        if ($o->relationLoaded('county') && $o->county?->name) {
+            return $o->county->name;
+        }
+
+        if ($o->relationLoaded('ward') && $o->ward?->county?->name) {
+            return $o->ward->county->name;
+        }
+
+        return '';
+    }
+
+    private function wardLabel(Outlet $o): string
+    {
+        if ($o->captured_ward) {
+            return $o->captured_ward;
+        }
+
+        if ($o->relationLoaded('ward') && $o->ward?->name) {
+            return $o->ward->name;
+        }
+
+        return '';
+    }
+
     private function locationLabel(Outlet $o): string
     {
-        $parts = array_filter([$o->physical_location, $o->landmark]);
+        $structured = array_filter([
+            $o->landmark,
+            $o->road,
+            $o->suburb,
+            $o->captured_ward,
+            $o->captured_county,
+        ]);
+        if ($structured !== []) {
+            return implode(', ', $structured);
+        }
+        if ($o->captured_place_name) {
+            return $o->captured_place_name;
+        }
+        if ($o->physical_location) {
+            return $o->physical_location;
+        }
+        if ($o->landmark) {
+            return $o->landmark;
+        }
+        if ($o->relationLoaded('ward') && $o->ward?->name) {
+            return $o->ward->name;
+        }
 
-        return implode(' · ', $parts) ?: $o->physical_location;
+        return '';
     }
 
     private function accountStatusLabel(Outlet $o): string

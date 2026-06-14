@@ -3,29 +3,21 @@
 import * as React from "react";
 import Link from "next/link";
 import {
-  Calendar,
   Eye,
   Menu,
   Pencil,
   Plus,
   Search,
   Trash2,
-  X,
 } from "lucide-react";
 import { AdminShell } from "../dashboard/_components/AdminShell";
 import { NotificationBell } from "@/components/NotificationBell";
 import {
-  createProject,
   deleteProject,
-  fetchCounties,
-  fetchCountyDetail,
-  fetchFieldWorkers,
+  fetchBranches,
   fetchProjects,
-  type CountyApiRow,
-  type FieldWorkerRowApi,
+  type BranchApiRow,
   type ProjectRowApi,
-  type ProjectWriteStatus,
-  type WardApiRow,
 } from "@/lib/api";
 
 type ProjectStatus = "Active" | "Completed" | "Paused" | "Draft";
@@ -33,13 +25,12 @@ type ProjectStatus = "Active" | "Completed" | "Paused" | "Draft";
 type Project = {
   id: string;
   name: string;
-  county: string;
+  branch: string;
   status: ProjectStatus;
   period: string;
   days: string;
   outletsCollected: number;
   fieldWorkers: number;
-  progress: number;
 };
 
 function mapApiProject(p: ProjectRowApi): Project {
@@ -52,13 +43,12 @@ function mapApiProject(p: ProjectRowApi): Project {
   return {
     id: p.id,
     name: p.name,
-    county: p.county,
+    branch: p.branch ?? "",
     status: p.status,
     period,
     days: `${days} day${days === 1 ? "" : "s"}`,
     outletsCollected: p.outlets_collected,
     fieldWorkers: p.field_workers,
-    progress: p.progress,
   };
 }
 
@@ -71,351 +61,6 @@ const statusPill = (status: ProjectStatus) =>
         ? "bg-amber-50 text-amber-700"
         : "bg-slate-100 text-slate-700";
 
-function CreateProjectModal({
-  open,
-  onClose,
-  onCreated,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onCreated: () => void | Promise<void>;
-}) {
-  const [name, setName] = React.useState("");
-  const [description, setDescription] = React.useState("");
-  const [countyId, setCountyId] = React.useState("");
-  const [startDate, setStartDate] = React.useState("");
-  const [endDate, setEndDate] = React.useState("");
-  const [status, setStatus] = React.useState<ProjectWriteStatus>("draft");
-  const [counties, setCounties] = React.useState<CountyApiRow[]>([]);
-  const [workers, setWorkers] = React.useState<FieldWorkerRowApi[]>([]);
-  const [countyWards, setCountyWards] = React.useState<WardApiRow[]>([]);
-  /** ward id → selected collector user id, or "" for unassigned */
-  const [wardPick, setWardPick] = React.useState<Record<number, string>>({});
-  const [wardsLoading, setWardsLoading] = React.useState(false);
-  const [fwSearch, setFwSearch] = React.useState("");
-  const [loadErr, setLoadErr] = React.useState<string | null>(null);
-  const [submitErr, setSubmitErr] = React.useState<string | null>(null);
-  const [loading, setLoading] = React.useState(false);
-  const [submitting, setSubmitting] = React.useState(false);
-
-  React.useEffect(() => {
-    if (!open) {
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setLoadErr(null);
-      try {
-        const [c, w] = await Promise.all([fetchCounties(), fetchFieldWorkers()]);
-        if (cancelled) {
-          return;
-        }
-        setCounties(c);
-        setWorkers(w.workers);
-      } catch (e) {
-        if (!cancelled) {
-          setLoadErr(e instanceof Error ? e.message : "Failed to load form data");
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
-
-  React.useEffect(() => {
-    if (!open) {
-      setName("");
-      setDescription("");
-      setCountyId("");
-      setStartDate("");
-      setEndDate("");
-      setStatus("draft");
-      setCountyWards([]);
-      setWardPick({});
-      setFwSearch("");
-      setSubmitErr(null);
-    }
-  }, [open]);
-
-  React.useEffect(() => {
-    if (!open || !countyId) {
-      setCountyWards([]);
-      setWardPick({});
-      return;
-    }
-    let cancelled = false;
-    const cid = Number(countyId);
-    if (!Number.isFinite(cid)) {
-      return;
-    }
-    void (async () => {
-      setWardsLoading(true);
-      try {
-        const { wards } = await fetchCountyDetail(cid);
-        if (cancelled) {
-          return;
-        }
-        setCountyWards(wards);
-        setWardPick({});
-      } catch {
-        if (!cancelled) {
-          setCountyWards([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setWardsLoading(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open, countyId]);
-
-  const visibleWards = React.useMemo(() => {
-    const q = fwSearch.trim().toLowerCase();
-    if (!q) {
-      return countyWards;
-    }
-    return countyWards.filter((w) => w.name.toLowerCase().includes(q));
-  }, [countyWards, fwSearch]);
-
-  const setWardWorker = (wardId: number, userId: string) => {
-    setWardPick((prev) => ({ ...prev, [wardId]: userId }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitErr(null);
-    const cid = Number(countyId);
-    if (!name.trim() || !Number.isFinite(cid)) {
-      setSubmitErr("Project name and county are required.");
-      return;
-    }
-    const wardAssignments = Object.entries(wardPick)
-      .filter(([, uid]) => uid !== "")
-      .map(([wid, uid]) => ({
-        ward_id: Number(wid),
-        user_id: Number(uid),
-      }));
-
-    setSubmitting(true);
-    try {
-      await createProject({
-        name: name.trim(),
-        county_id: cid,
-        description: description.trim() || null,
-        start_date: startDate || null,
-        end_date: endDate || null,
-        status,
-        ...(wardAssignments.length > 0 ? { ward_assignments: wardAssignments } : {}),
-      });
-      await onCreated();
-      onClose();
-    } catch (err) {
-      setSubmitErr(err instanceof Error ? err.message : "Failed to create project");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  if (!open) {
-    return null;
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-y-contain bg-slate-900/40 p-3 py-6 sm:p-4 sm:py-8">
-      <form
-        onSubmit={handleSubmit}
-        className="my-auto w-full max-w-5xl rounded-2xl border border-slate-200 bg-white shadow-xl"
-      >
-        <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-5">
-          <h2 className="text-xl font-semibold text-slate-900 sm:text-3xl">Create Project</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="self-end rounded-lg p-1 text-slate-500 hover:bg-slate-100 sm:self-auto"
-          >
-            <X size={24} />
-          </button>
-        </div>
-
-        <div className="space-y-8 p-4 sm:p-8">
-          {loadErr && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-              {loadErr}
-            </div>
-          )}
-          {submitErr && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-              {submitErr}
-            </div>
-          )}
-
-          <section className="space-y-5">
-            <h3 className="border-l-4 border-emerald-600 pl-3 text-2xl font-medium text-slate-900">
-              Project Information
-            </h3>
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="rounded-xl border border-slate-200 px-4 py-3 text-sm"
-                placeholder="Project name"
-                disabled={loading}
-              />
-              <label className="space-y-1 md:col-span-2">
-                <span className="text-xs text-slate-500">Description</span>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm"
-                  placeholder="Project description"
-                  rows={3}
-                  disabled={loading}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">County</span>
-                <select
-                  value={countyId}
-                  onChange={(e) => setCountyId(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm"
-                  disabled={loading}
-                >
-                  <option value="">Select county</option>
-                  {counties.map((c) => (
-                    <option key={c.id} value={String(c.id)}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">Status</span>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as ProjectWriteStatus)}
-                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm"
-                  disabled={loading}
-                >
-                  <option value="draft">Draft</option>
-                  <option value="active">Active</option>
-                  <option value="paused">Paused</option>
-                  <option value="completed">Completed</option>
-                </select>
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">Start date</span>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm"
-                  disabled={loading}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">End date</span>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm"
-                  disabled={loading}
-                />
-              </label>
-            </div>
-          </section>
-
-          <section className="space-y-4 border-t border-slate-200 pt-6">
-            <h3 className="border-l-4 border-emerald-600 pl-3 text-2xl font-medium text-slate-900">
-              Assign wards to collectors
-            </h3>
-            <p className="text-sm text-slate-600">
-              Select a county first. Each ward in that county can be assigned to one field worker (many wards per
-              worker). Collectors will see these wards in the mobile app.
-            </p>
-            {!countyId ? (
-              <p className="text-sm text-amber-700">Choose a county above to load wards.</p>
-            ) : wardsLoading ? (
-              <p className="text-sm text-slate-500">Loading wards…</p>
-            ) : countyWards.length === 0 ? (
-              <p className="text-sm text-slate-500">No wards found for this county in the database.</p>
-            ) : workers.length === 0 ? (
-              <p className="text-sm text-rose-700">Add field collectors before assigning wards.</p>
-            ) : (
-              <div className="max-h-72 overflow-auto rounded-xl border border-slate-100">
-                <table className="w-full min-w-[520px] text-sm">
-                  <thead className="sticky top-0 bg-slate-50 text-left text-xs text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2 font-medium">Ward</th>
-                      <th className="px-3 py-2 font-medium">Assigned collector</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleWards.map((ward) => (
-                      <tr key={ward.id} className="border-t border-slate-100">
-                        <td className="px-3 py-2 text-slate-800">{ward.name}</td>
-                        <td className="px-3 py-2">
-                          <select
-                            className="w-full max-w-xs rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-                            value={wardPick[ward.id] ?? ""}
-                            onChange={(e) => setWardWorker(ward.id, e.target.value)}
-                          >
-                            <option value="">— Unassigned —</option>
-                            {workers.map((w) => (
-                              <option key={w.id} value={w.id}>
-                                {w.name}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-3">
-              <Search size={18} className="text-slate-400" />
-              <input
-                className="w-full text-sm outline-none"
-                placeholder="Filter ward names…"
-                value={fwSearch}
-                onChange={(e) => setFwSearch(e.target.value)}
-                disabled={loading || countyWards.length === 0}
-              />
-            </div>
-          </section>
-        </div>
-
-        <div className="flex justify-end gap-3 border-t border-slate-200 px-8 py-5">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl bg-slate-100 px-5 py-2.5 text-sm font-medium text-slate-700"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={submitting || loading}
-            className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {submitting ? "Creating…" : "Create Project"}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
 
 function DeleteProjectModal({
   project,
@@ -483,7 +128,6 @@ function DeleteProjectModal({
 }
 
 export default function ProjectsPage() {
-  const [isCreateOpen, setIsCreateOpen] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<Project | null>(null);
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [summary, setSummary] = React.useState({
@@ -497,12 +141,23 @@ export default function ProjectsPage() {
   const [loadState, setLoadState] = React.useState<"loading" | "ok" | "error">("loading");
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
+  const [branchFilter, setBranchFilter] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState("");
+  const [branches, setBranches] = React.useState<BranchApiRow[]>([]);
+
+  React.useEffect(() => {
+    void fetchBranches().then((d) => setBranches(d.branches));
+  }, []);
 
   const loadProjects = React.useCallback(async () => {
     setLoadState("loading");
     setLoadError(null);
     try {
-      const data = await fetchProjects();
+      const data = await fetchProjects({
+        search: search || undefined,
+        branch_id: branchFilter ? Number(branchFilter) : undefined,
+        status: statusFilter || undefined,
+      });
       setSummary({
         ...data.summary,
         draft_projects: data.summary.draft_projects ?? 0,
@@ -513,7 +168,7 @@ export default function ProjectsPage() {
       setLoadError(e instanceof Error ? e.message : "Failed to load projects");
       setLoadState("error");
     }
-  }, []);
+  }, [search, branchFilter, statusFilter]);
 
   React.useEffect(() => {
     void loadProjects();
@@ -527,7 +182,7 @@ export default function ProjectsPage() {
     return projects.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
-        p.county.toLowerCase().includes(q) ||
+        p.branch.toLowerCase().includes(q) ||
         p.status.toLowerCase().includes(q),
     );
   }, [projects, search]);
@@ -555,13 +210,13 @@ export default function ProjectsPage() {
               <div className="shrink-0">
                 <NotificationBell />
               </div>
-              <button
-                onClick={() => setIsCreateOpen(true)}
+              <Link
+                href="/admin/projects/new"
                 className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-[12px] font-semibold text-white shadow-sm hover:bg-emerald-700"
               >
                 <Plus size={15} />
                 Create Project
-              </button>
+              </Link>
             </div>
           </header>
 
@@ -601,14 +256,27 @@ export default function ProjectsPage() {
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
-              {["All Status", "All Counties", "All Project Managers"].map((p) => (
-                <button key={p} className="rounded-xl border border-slate-200 px-3 py-2 text-left text-sm text-slate-600">
-                  {p}
-                </button>
-              ))}
-              <button className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600">
-                <Calendar size={16} /> May 1, 2026 - May 31, 2026
-              </button>
+              <select
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600"
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+              >
+                <option value="">All Branches</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+              <select
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="">All Status</option>
+                <option value="draft">Draft</option>
+                <option value="active">Active</option>
+                <option value="paused">Paused</option>
+                <option value="completed">Completed</option>
+              </select>
             </div>
 
             <div className="mt-4 overflow-x-auto">
@@ -616,26 +284,25 @@ export default function ProjectsPage() {
                 <thead className="bg-slate-50 text-xs text-slate-500">
                   <tr>
                     <th className="px-3 py-3 text-left font-medium">PROJECT NAME</th>
-                    <th className="px-3 py-3 text-left font-medium">COUNTY</th>
+                    <th className="px-3 py-3 text-left font-medium">BRANCH</th>
                     <th className="px-3 py-3 text-left font-medium">STATUS</th>
                     <th className="px-3 py-3 text-left font-medium">PERIOD</th>
-                    <th className="px-3 py-3 text-left font-medium">OUTLETS COLLECTED</th>
+                    <th className="px-3 py-3 text-left font-medium">SUBMISSIONS</th>
                     <th className="px-3 py-3 text-left font-medium">FIELD WORKERS</th>
-                    <th className="px-3 py-3 text-left font-medium">PROGRESS</th>
                     <th className="px-3 py-3 text-left font-medium">ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loadState === "loading" && (
                     <tr>
-                      <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-500">
+                      <td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-500">
                         Loading projects…
                       </td>
                     </tr>
                   )}
                   {loadState === "ok" && filtered.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-500">
+                      <td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-500">
                         No projects match your filters. Create a project or adjust search.
                       </td>
                     </tr>
@@ -644,7 +311,7 @@ export default function ProjectsPage() {
                     filtered.map((project) => (
                     <tr key={project.id} className="border-b border-slate-100">
                       <td className="px-3 py-3 font-medium text-slate-800">{project.name}</td>
-                      <td className="px-3 py-3 text-slate-600">{project.county}</td>
+                      <td className="px-3 py-3 text-slate-600">{project.branch || "—"}</td>
                       <td className="px-3 py-3">
                         <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusPill(project.status)}`}>
                           {project.status}
@@ -657,18 +324,12 @@ export default function ProjectsPage() {
                       <td className="px-3 py-3 font-semibold text-slate-800">{project.outletsCollected.toLocaleString()}</td>
                       <td className="px-3 py-3 font-semibold text-slate-700">{project.fieldWorkers}</td>
                       <td className="px-3 py-3">
-                        <div className="text-xs font-semibold text-slate-700">{project.progress}%</div>
-                        <div className="mt-1 h-1.5 w-24 rounded-full bg-slate-100">
-                          <div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${project.progress}%` }} />
-                        </div>
-                      </td>
-                      <td className="px-3 py-3">
                         <div className="flex items-center gap-1">
                           <Link href={`/admin/projects/${project.id}`} className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50">
                             <Eye size={14} />
                           </Link>
                           <Link
-                            href={`/admin/projects/edit/${project.id}`}
+                            href={`/admin/projects/${project.id}?tab=settings`}
                             className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"
                           >
                             <Pencil size={14} />
@@ -688,11 +349,6 @@ export default function ProjectsPage() {
             </div>
           </section>
 
-      <CreateProjectModal
-        open={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        onCreated={loadProjects}
-      />
       <DeleteProjectModal
         project={deleteTarget}
         onClose={() => setDeleteTarget(null)}

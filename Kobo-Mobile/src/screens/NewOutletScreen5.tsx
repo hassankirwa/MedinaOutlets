@@ -1,8 +1,9 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useMemo, type ReactNode } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { formatOptionLabel } from "../components/NewOutletFields";
+import { NewOutletFormScreen } from "../components/NewOutletFormScreen";
 import { NewOutletFooterButtons } from "../components/NewOutletFooterButtons";
 import { NewOutletHeader } from "../components/NewOutletHeader";
 import { NewOutletStepBar } from "../components/NewOutletStepBar";
@@ -50,11 +51,11 @@ export function NewOutletScreen5({
         icon: <MaterialCommunityIcons name="folder-outline" size={16} color="#169447" />,
       });
     }
-    if (draft.wardName.trim()) {
+    if (draft.branchName.trim()) {
       placement.push({
-        label: "Ward",
-        value: draft.wardName.trim(),
-        icon: <Ionicons name="map-outline" size={16} color="#169447" />,
+        label: "Branch",
+        value: draft.branchName.trim(),
+        icon: <MaterialCommunityIcons name="office-building-outline" size={16} color="#169447" />,
       });
     }
 
@@ -78,12 +79,12 @@ export function NewOutletScreen5({
 
     const afterCategory: ReviewItem[] = [
       {
-        label: "Facility Name",
+        label: "Facility / Outlet Name",
         value: emptyLabel(draft.facilityName),
         icon: <Ionicons name="document-text-outline" size={16} color="#F59E0B" />,
       },
       {
-        label: "Owner / Director",
+        label: "Owner / Contact Person",
         value: emptyLabel(draft.ownerName),
         icon: <Ionicons name="people-outline" size={16} color="#F59E0B" />,
       },
@@ -93,9 +94,19 @@ export function NewOutletScreen5({
         icon: <Ionicons name="call-outline" size={16} color="#64748B" />,
       },
       {
+        label: "Alternative Phone",
+        value: emptyLabel(draft.alternativePhone),
+        icon: <Ionicons name="call-outline" size={16} color="#64748B" />,
+      },
+      {
         label: "Email",
         value: emptyLabel(draft.email),
         icon: <Ionicons name="mail-outline" size={16} color="#64748B" />,
+      },
+      {
+        label: "Captured Address",
+        value: emptyLabel(draft.capturedAddress || draft.reverseGeocodedAddress),
+        icon: <Ionicons name="map-outline" size={16} color="#169447" />,
       },
       {
         label: "Physical Location",
@@ -103,18 +114,18 @@ export function NewOutletScreen5({
         icon: <Ionicons name="location-outline" size={16} color="#FB923C" />,
       },
       {
-        label: "Landmark",
+        label: "Nearest Landmark",
         value: emptyLabel(draft.landmark),
         icon: <Ionicons name="navigate-outline" size={16} color="#3B82F6" />,
       },
       {
-        label: "GPS Location",
+        label: "GPS Coordinates",
         value: emptyLabel(draft.gps),
         icon: <Ionicons name="pin-outline" size={16} color="#2563EB" />,
       },
       {
         label: "GPS Accuracy",
-        value: `${draft.accuracyMeters} m`,
+        value: draft.accuracyMeters > 0 ? `${draft.accuracyMeters} m` : "—",
         icon: <Ionicons name="analytics-outline" size={16} color="#2563EB" />,
       },
       {
@@ -137,13 +148,16 @@ export function NewOutletScreen5({
   }, [draft]);
 
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
       <NewOutletHeader topInset={insets.top} onBack={onBack} />
       <NewOutletStepBar step={5} />
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <NewOutletFormScreen contentContainerStyle={styles.content}>
         <Text style={styles.title}>Review & Submit</Text>
-        <Text style={styles.subtitle}>Please review all information.</Text>
+        <Text style={styles.subtitle}>Please review all information before submitting.</Text>
 
         <Text style={styles.remarksLabel}>Remarks (optional)</Text>
         <TextInput
@@ -166,7 +180,7 @@ export function NewOutletScreen5({
             </View>
           ))}
         </View>
-      </ScrollView>
+      </NewOutletFormScreen>
 
       <NewOutletFooterButtons
         onBack={onBack}
@@ -174,13 +188,13 @@ export function NewOutletScreen5({
         nextLabel="Submit"
         nextDisabled={submitDisabled}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#F6F7FB" },
-  content: { padding: 20, paddingBottom: 100 },
+  root: { flex: 1, backgroundColor: "#F6F7FB", overflow: "hidden" },
+  content: { padding: 20 },
   title: { color: "#1E293B", fontSize: 31, fontFamily: font.extraBold },
   subtitle: { color: "#475569", fontSize: 19, marginTop: 6, marginBottom: 12, fontFamily: font.regular },
   remarksLabel: { color: "#334155", fontSize: 15, fontFamily: font.semiBold, marginBottom: 8 },

@@ -57,14 +57,34 @@ export type CreatedOutlet = {
     landmark?: string | null;
     remarks?: string | null;
     email?: string | null;
+    alternative_phone?: string | null;
   };
 };
+
+const AUTH_FETCH_TIMEOUT_MS = 15_000;
 
 async function parseJson<T>(res: Response): Promise<T | null> {
   try {
     return (await res.json()) as T;
   } catch {
     return null;
+  }
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = AUTH_FETCH_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new Error(
+        `Request timed out after ${Math.round(timeoutMs / 1000)}s. Check EXPO_PUBLIC_API_URL and that Laravel is running (php artisan serve --host=0.0.0.0).`,
+      );
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -109,14 +129,25 @@ export async function apiForgotPassword(email: string): Promise<{ message: strin
 }
 
 export async function apiLogin(email: string, password: string): Promise<LoginResponse> {
-  const res = await fetch(`${getApiBase()}/api/auth/login`, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ email: email.trim(), password }),
-  });
+  const base = getApiBase();
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(`${base}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email: email.trim(), password }),
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("timed out")) {
+      throw e;
+    }
+    throw new Error(
+      `Cannot reach the API at ${base}. Check EXPO_PUBLIC_API_URL (use port 8000 for Laravel, not 8081 Expo Metro). On a physical device, run: php artisan serve --host=0.0.0.0`,
+    );
+  }
   const data = await parseJson<LoginResponse>(res);
   if (!res.ok || !data?.token || !data.user) {
     let message = "Sign in failed";
@@ -134,7 +165,7 @@ export async function apiLogin(email: string, password: string): Promise<LoginRe
 }
 
 export async function apiMe(token: string): Promise<AuthUser> {
-  const res = await fetch(`${getApiBase()}/api/auth/me`, {
+  const res = await fetchWithTimeout(`${getApiBase()}/api/auth/me`, {
     headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
   });
   const data = await parseJson<AuthUser>(res);
@@ -162,17 +193,35 @@ export async function apiLogout(token: string | null): Promise<void> {
 }
 
 export function draftToOutletPayload(draft: NewOutletDraft): Record<string, unknown> {
+  const physicalLocation =
+    draft.physicalLocation.trim() ||
+    draft.capturedAddress.trim() ||
+    draft.landmark.trim() ||
+    (draft.gpsCapturedAt ? `${draft.latitude}, ${draft.longitude}` : "");
+
   return {
-    ward_id: draft.wardId ?? null,
+    project_id: draft.collectionProjectId ? Number(draft.collectionProjectId) : null,
+    branch_id: draft.branchId ?? null,
+    questionnaire_id: draft.questionnaireId ?? null,
+    captured_place_name: draft.capturedPlaceName || draft.capturedAddress || draft.physicalLocation || draft.landmark || null,
+    reverse_geocoded_address: draft.reverseGeocodedAddress || draft.capturedAddress || null,
+    captured_address: draft.capturedAddress || null,
+    road: draft.road || null,
+    suburb: draft.suburb || null,
+    captured_ward: draft.capturedWard || null,
+    captured_county: draft.capturedCounty || null,
+    region: draft.region || null,
+    country: draft.country || null,
     facility_name: draft.facilityName,
     owner_name: draft.ownerName,
     business_phone: draft.businessPhone || null,
+    alternative_phone: draft.alternativePhone.trim() || null,
     email: draft.email || null,
-    physical_location: draft.physicalLocation,
+    physical_location: physicalLocation,
     landmark: draft.landmark || null,
     latitude: draft.latitude,
     longitude: draft.longitude,
-    gps_accuracy_meters: draft.accuracyMeters,
+    gps_accuracy_meters: draft.accuracyMeters > 0 ? draft.accuracyMeters : null,
     type_of_account: draft.typeOfAccount,
     medical_facility_status: draft.medicalFacilityStatus,
     outlet_serviced_by_med: draft.outletServicedByMed,
@@ -280,13 +329,61 @@ export async function apiCreateOutlet(
   return parseOutletCreateResponse(res, raw);
 }
 
+export async function apiReverseGeocode(
+  token: string,
+  latitude: number,
+  longitude: number,
+): Promise<{
+  captured_address?: string | null;
+  road?: string | null;
+  suburb?: string | null;
+  captured_ward?: string | null;
+  captured_county?: string | null;
+  region?: string | null;
+  country?: string | null;
+  reverse_geocoded_address?: string | null;
+  captured_place_name?: string | null;
+  landmark?: string | null;
+}> {
+  const params = new URLSearchParams({
+    lat: String(latitude),
+    lng: String(longitude),
+  });
+  const res = await fetch(`${getApiBase()}/api/geocode/reverse?${params}`, {
+    headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+  });
+  const data = await parseJson<Record<string, string | null>>(res);
+  if (!res.ok || !data) {
+    throw new Error(errorMessageFromBody(data, "Could not resolve location from GPS"));
+  }
+  return data;
+}
+
 export type MyWardAssignmentProject = {
   id: string;
   name: string;
-  county: string;
+  branch?: string;
+  branch_id?: string | null;
   status: string;
-  wards: { id: number; name: string }[];
+  questionnaire_id?: string | null;
+  questionnaire_name?: string | null;
 };
+
+export type MobileBootstrap = {
+  assigned_branches: Array<{ id: string; name: string; code?: string | null }>;
+  active_projects: MyWardAssignmentProject[];
+};
+
+export async function apiMobileBootstrap(token: string): Promise<MobileBootstrap> {
+  const res = await fetch(`${getApiBase()}/api/mobile/bootstrap`, {
+    headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+  });
+  const data = await parseJson<MobileBootstrap>(res);
+  if (!res.ok || !data) {
+    return { assigned_branches: [], active_projects: [] };
+  }
+  return data;
+}
 
 export async function apiMyWardAssignments(token: string): Promise<MyWardAssignmentProject[]> {
   const res = await fetch(`${getApiBase()}/api/my/ward-assignments`, {
@@ -381,6 +478,156 @@ export async function apiListMyOutlets(token: string): Promise<CreatedOutlet[]> 
     throw new Error(errorMessageFromBody(data, "Could not load submissions"));
   }
   return Array.isArray(data?.data) ? data.data : [];
+}
+
+export type CollectorNotificationPreferences = {
+  submission_review?: boolean;
+  project_assignment?: boolean;
+  sync_reminder?: boolean;
+  channels?: {
+    in_app?: boolean;
+    email?: boolean;
+    push?: boolean;
+  };
+};
+
+export type InAppNotificationRow = {
+  id: string;
+  type: string;
+  read_at: string | null;
+  created_at: string | null;
+  title: string;
+  body: string;
+  action_path?: string | null;
+  page_key?: string | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  mobile_screen?: "submission_details" | "projects" | "notifications" | null;
+  mobile_params?: { outlet_id?: string; project_id?: string } | null;
+};
+
+export async function apiNotificationUnreadCount(token: string): Promise<number> {
+  const res = await fetch(`${getApiBase()}/api/notifications/unread-count`, {
+    headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+  });
+  const data = await parseJson<{ count?: number }>(res);
+  if (!res.ok) {
+    return 0;
+  }
+  return typeof data?.count === "number" ? data.count : 0;
+}
+
+export async function apiFetchNotifications(
+  token: string,
+  params?: { per_page?: number },
+): Promise<InAppNotificationRow[]> {
+  const qs = new URLSearchParams();
+  if (params?.per_page) {
+    qs.set("per_page", String(params.per_page));
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  const res = await fetch(`${getApiBase()}/api/notifications${suffix}`, {
+    headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+  });
+  const data = await parseJson<{ data?: InAppNotificationRow[] }>(res);
+  if (!res.ok) {
+    throw new Error(errorMessageFromBody(data, "Could not load notifications"));
+  }
+  return Array.isArray(data?.data) ? data.data : [];
+}
+
+export async function apiMarkNotificationRead(token: string, id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/api/notifications/${encodeURIComponent(id)}/read`, {
+    method: "POST",
+    headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = await parseJson(res);
+    throw new Error(errorMessageFromBody(data, "Could not mark notification read"));
+  }
+}
+
+export async function apiMarkAllNotificationsRead(token: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/api/notifications/read-all`, {
+    method: "POST",
+    headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = await parseJson(res);
+    throw new Error(errorMessageFromBody(data, "Could not mark notifications read"));
+  }
+}
+
+export async function apiFetchNotificationPreferences(
+  token: string,
+): Promise<CollectorNotificationPreferences> {
+  const res = await fetch(`${getApiBase()}/api/settings/notifications`, {
+    headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+  });
+  const data = await parseJson<{ notification_preferences?: CollectorNotificationPreferences }>(res);
+  if (!res.ok || !data?.notification_preferences) {
+    throw new Error(errorMessageFromBody(data, "Could not load notification settings"));
+  }
+  return data.notification_preferences;
+}
+
+export async function apiUpdateNotificationPreferences(
+  token: string,
+  prefs: CollectorNotificationPreferences,
+): Promise<CollectorNotificationPreferences> {
+  const res = await fetch(`${getApiBase()}/api/settings/notifications`, {
+    method: "PATCH",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(prefs),
+  });
+  const data = await parseJson<{ notification_preferences?: CollectorNotificationPreferences }>(res);
+  if (!res.ok || !data?.notification_preferences) {
+    throw new Error(errorMessageFromBody(data, "Could not save notification settings"));
+  }
+  return data.notification_preferences;
+}
+
+export async function apiRegisterDeviceToken(
+  token: string,
+  params: {
+    expo_push_token: string;
+    platform: "ios" | "android";
+    device_name?: string | null;
+  },
+): Promise<void> {
+  const res = await fetch(`${getApiBase()}/api/device-tokens`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const data = await parseJson(res);
+    throw new Error(errorMessageFromBody(data, "Could not register device for push"));
+  }
+}
+
+export async function apiUnregisterDeviceToken(token: string, expoPushToken: string): Promise<void> {
+  try {
+    await fetch(`${getApiBase()}/api/device-tokens`, {
+      method: "DELETE",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ expo_push_token: expoPushToken }),
+    });
+  } catch {
+    /* ignore */
+  }
 }
 
 export const authStorage = {

@@ -6,6 +6,7 @@ import { formatOptionLabel } from "../components/NewOutletFields";
 import { OutletPhotoImage } from "../components/OutletPhotoImage";
 import type { SubmittedOutlet } from "../context/NewOutletDraftContext";
 import { font } from "../theme/fonts";
+import { getSubmissionStatus } from "../utils/submissionStatus";
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -24,12 +25,12 @@ export function SubmissionDetailsScreen({
   submission,
   token,
   onBack,
-  onEdit,
+  onAddNewSubmission,
 }: {
   submission: SubmittedOutlet;
   token: string | null;
   onBack: () => void;
-  onEdit: () => void;
+  onAddNewSubmission: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
@@ -38,6 +39,7 @@ export function SubmissionDetailsScreen({
   const photoGalleryHeight = 300;
   const photos = submission.photos.filter((p) => typeof p.uri === "string" && p.uri.trim().length > 0);
   const cover = photos[0]?.uri;
+  const status = getSubmissionStatus(submission);
 
   return (
     <View style={styles.root}>
@@ -56,43 +58,35 @@ export function SubmissionDetailsScreen({
               <View
                 style={[
                   styles.statusPill,
-                  submission.syncStatus === "pending" && styles.statusPillPending,
-                  submission.syncStatus !== "pending" &&
-                    submission.serverReviewStatus === "pending" &&
-                    styles.statusPillReview,
-                  submission.serverReviewStatus === "approved" && styles.statusPillApproved,
-                  submission.serverReviewStatus === "rejected" && styles.statusPillRejected,
+                  status.variant === "pending_sync" && styles.statusPillPending,
+                  status.variant === "submitted" && styles.statusPillSubmitted,
+                  status.variant === "approved" && styles.statusPillApproved,
+                  status.variant === "rejected" && styles.statusPillRejected,
                 ]}
               >
                 <Text
                   style={[
                     styles.statusText,
-                    submission.syncStatus === "pending" && styles.statusTextPending,
-                    submission.syncStatus !== "pending" &&
-                      submission.serverReviewStatus === "pending" &&
-                      styles.statusTextReview,
-                    submission.serverReviewStatus === "approved" && styles.statusTextApproved,
-                    submission.serverReviewStatus === "rejected" && styles.statusTextRejected,
+                    status.variant === "pending_sync" && styles.statusTextPending,
+                    status.variant === "submitted" && styles.statusTextSubmitted,
+                    status.variant === "approved" && styles.statusTextApproved,
+                    status.variant === "rejected" && styles.statusTextRejected,
                   ]}
                 >
-                  {submission.syncStatus === "pending"
-                    ? "Waiting to sync"
-                    : submission.serverReviewStatus === "approved"
-                      ? "Approved"
-                      : submission.serverReviewStatus === "rejected"
-                        ? "Rejected"
-                        : submission.serverReviewStatus === "pending"
-                          ? "Under review"
-                          : "Submitted"}
+                  {status.label}
                 </Text>
               </View>
             </View>
-            {submission.syncStatus === "pending" ? (
+            {status.variant === "pending_sync" ? (
               <Text style={styles.pendingNotice}>
                 This outlet is stored on your phone only. It will upload when you have a stable internet connection.
               </Text>
             ) : null}
-            <Text style={styles.submittedMeta}>Submitted on {formatDateTime(submission.submittedAt)}</Text>
+            <Text style={styles.submittedMeta}>
+              {status.variant === "pending_sync"
+                ? `Saved locally on ${formatDateTime(submission.submittedAt)}`
+                : `Submitted on ${formatDateTime(submission.submittedAt)}`}
+            </Text>
           </View>
         </View>
 
@@ -161,10 +155,10 @@ export function SubmissionDetailsScreen({
         </View>
       </ScrollView>
 
-      {submission.syncStatus !== "pending" ? (
+      {status.variant !== "pending_sync" ? (
         <View style={[styles.footer, { paddingBottom: insets.bottom + 10 }]}>
-          <Pressable style={styles.editButton} onPress={onEdit}>
-            <Text style={styles.editText}>Edit Submission</Text>
+          <Pressable style={styles.addNewButton} onPress={onAddNewSubmission}>
+            <Text style={styles.addNewButtonText}>Add New Submission</Text>
           </Pressable>
         </View>
       ) : null}
@@ -198,12 +192,12 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   statusPillPending: { backgroundColor: "#FEF3C7" },
-  statusPillReview: { backgroundColor: "#FFFBEB" },
+  statusPillSubmitted: { backgroundColor: "#E8F7EE" },
   statusPillApproved: { backgroundColor: "#D1FAE5" },
   statusPillRejected: { backgroundColor: "#FFE4E6" },
   statusText: { color: "#12914A", fontSize: 13, fontFamily: font.semiBold },
   statusTextPending: { color: "#B45309" },
-  statusTextReview: { color: "#B45309" },
+  statusTextSubmitted: { color: "#12914A" },
   statusTextApproved: { color: "#047857" },
   statusTextRejected: { color: "#BE123C" },
   pendingNotice: {
@@ -256,12 +250,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
   },
-  editButton: {
+  addNewButton: {
     height: 52,
     borderRadius: 8,
     backgroundColor: "#0F9445",
     alignItems: "center",
     justifyContent: "center",
   },
-  editText: { color: "#FFF", fontSize: 20, fontFamily: font.bold },
+  addNewButtonText: { color: "#FFF", fontSize: 20, fontFamily: font.bold },
 });

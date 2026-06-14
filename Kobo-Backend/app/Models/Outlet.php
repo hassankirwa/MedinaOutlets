@@ -4,12 +4,17 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
 
 class Outlet extends Model
 {
     protected $fillable = [
         'company_id',
+        'project_id',
+        'branch_id',
+        'county_id',
+        'questionnaire_id',
         'created_by',
         'client_submission_key',
         'ward_id',
@@ -17,12 +22,22 @@ class Outlet extends Model
         'outlet_type',
         'owner_name',
         'business_phone',
+        'alternative_phone',
         'email',
         'physical_location',
         'landmark',
         'latitude',
         'longitude',
         'gps_accuracy_meters',
+        'captured_place_name',
+        'reverse_geocoded_address',
+        'captured_address',
+        'road',
+        'suburb',
+        'captured_ward',
+        'captured_county',
+        'region',
+        'country',
         'type_of_account',
         'medical_facility_status',
         'outlet_serviced_by_med',
@@ -63,11 +78,51 @@ class Outlet extends Model
     }
 
     /**
+     * @return BelongsTo<Project, $this>
+     */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class);
+    }
+
+    /**
+     * @return BelongsTo<Branch, $this>
+     */
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    /**
+     * @return BelongsTo<County, $this>
+     */
+    public function county(): BelongsTo
+    {
+        return $this->belongsTo(County::class);
+    }
+
+    /**
+     * @return BelongsTo<Questionnaire, $this>
+     */
+    public function questionnaire(): BelongsTo
+    {
+        return $this->belongsTo(Questionnaire::class);
+    }
+
+    /**
      * @return BelongsTo<Ward, $this>
      */
     public function ward(): BelongsTo
     {
         return $this->belongsTo(Ward::class);
+    }
+
+    /**
+     * @return HasMany<SubmissionAnswer, $this>
+     */
+    public function answers(): HasMany
+    {
+        return $this->hasMany(SubmissionAnswer::class);
     }
 
     /**

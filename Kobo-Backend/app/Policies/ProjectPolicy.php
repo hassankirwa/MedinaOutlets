@@ -25,7 +25,8 @@ class ProjectPolicy
 
         if ($user->role?->slug === 'field_collector') {
             return $project->wardAssignments()->where('user_id', $user->id)->exists()
-                || $project->assignedWorkers()->where('users.id', $user->id)->exists();
+                || $project->assignedWorkers()->where('users.id', $user->id)->exists()
+                || $project->projectFieldWorkers()->where('field_worker_id', $user->id)->exists();
         }
 
         return true;

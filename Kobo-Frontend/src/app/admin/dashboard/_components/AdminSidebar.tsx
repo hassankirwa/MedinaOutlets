@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   FolderKanban,
+  GitBranch,
   FileText,
   Users,
   Map,
@@ -26,8 +27,9 @@ type SidebarItem = {
 const items: SidebarItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/admin/dashboard" },
   { icon: FolderKanban, label: "Projects", href: "/admin/projects" },
-  { icon: FileText, label: "Submissions", href: "/admin/submissions" },
+  { icon: GitBranch, label: "Branches", href: "/admin/branches" },
   { icon: Users, label: "Field Workers", href: "/admin/field-workers" },
+  { icon: FileText, label: "Submissions", href: "/admin/submissions" },
   { icon: Map, label: "Map View", href: "/admin/map-view" },
   { icon: FileText, label: "Reports", href: "/admin/reports" },
   { icon: Settings, label: "Settings", href: "/admin/settings" },

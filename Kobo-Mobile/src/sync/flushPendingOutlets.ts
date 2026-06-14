@@ -13,9 +13,10 @@ export async function flushPendingOutletsForUser(
   userId: number,
   replaceSubmissionAfterSync: (localId: string, synced: SubmittedOutlet) => void,
   onPermanentFailure?: (localId: string, message: string) => void,
-): Promise<{ syncedCount: number; stoppedForNetwork: boolean }> {
+): Promise<{ syncedCount: number; failedCount: number; stoppedForNetwork: boolean }> {
   const pending = await listPendingOutletsForUser(userId);
   let syncedCount = 0;
+  let failedCount = 0;
 
   for (const record of pending) {
     try {
@@ -33,13 +34,13 @@ export async function flushPendingOutletsForUser(
       syncedCount += 1;
     } catch (e) {
       if (isLikelyNetworkError(e)) {
-        return { syncedCount, stoppedForNetwork: true };
+        return { syncedCount, failedCount, stoppedForNetwork: true };
       }
       await removePendingOutlet(record.localId);
+      failedCount += 1;
       onPermanentFailure?.(record.localId, errorMessage(e));
-      return { syncedCount, stoppedForNetwork: false };
     }
   }
 
-  return { syncedCount, stoppedForNetwork: false };
+  return { syncedCount, failedCount, stoppedForNetwork: false };
 }

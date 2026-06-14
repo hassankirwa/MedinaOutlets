@@ -5,69 +5,27 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Outlet;
 use App\Models\Project;
+use App\Models\ProjectCoverage;
+use App\Models\ProjectFieldWorker;
 use App\Models\ProjectWardAssignment;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\Ward;
+use App\Services\BranchCoverageValidator;
+use App\Services\CollectorNotificationService;
+use App\Services\ProjectStatsService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+
 class ProjectController extends Controller
 {
-    /**
-     * @return Builder<\App\Models\Outlet>
-     */
-    private function scopedOutletQuery(User $user): Builder
-    {
-        $o = (new Outlet)->getTable();
-        $query = Outlet::query();
-
-        if ($user->role?->slug !== 'super_admin') {
-            if ($user->role?->slug === 'field_collector') {
-                $query->where($o.'.created_by', $user->id);
-            } else {
-                $query->where($o.'.company_id', $user->company_id);
-            }
-        }
-
-        return $query;
-    }
-
-    /**
-     * @return array{total: int, approved: int, progress: int, period_start: ?Carbon, period_end: ?Carbon, contributors: int}
-     */
-    private function countyOutletStats(User $user, int $countyId): array
-    {
-        $o = (new Outlet)->getTable();
-        $w = (new Ward)->getTable();
-
-        $detailQuery = $this->scopedOutletQuery($user)
-            ->whereNotNull($o.'.ward_id')
-            ->join($w, $w.'.id', '=', $o.'.ward_id')
-            ->where($w.'.county_id', $countyId);
-
-        $total = (clone $detailQuery)->count();
-        $approved = $total > 0 ? (clone $detailQuery)->where($o.'.status', 'approved')->count() : 0;
-        $progress = $total > 0 ? (int) round(100 * $approved / max(1, $total)) : 0;
-
-        $periodStart = $total > 0 ? (clone $detailQuery)->min($o.'.created_at') : null;
-        $periodEnd = $total > 0 ? (clone $detailQuery)->max($o.'.created_at') : null;
-
-        $contributors = $total > 0
-            ? (clone $detailQuery)->distinct()->count($o.'.created_by')
-            : 0;
-
-        return [
-            'total' => $total,
-            'approved' => $approved,
-            'progress' => $progress,
-            'period_start' => $periodStart ? Carbon::parse($periodStart) : null,
-            'period_end' => $periodEnd ? Carbon::parse($periodEnd) : null,
-            'contributors' => $contributors,
-        ];
-    }
+    public function __construct(
+        private readonly ProjectStatsService $statsService,
+        private readonly BranchCoverageValidator $coverageValidator,
+    ) {}
 
     private function labelStatus(string $raw): string
     {
@@ -85,7 +43,7 @@ class ProjectController extends Controller
      */
     private function projectToSummaryArray(Project $project, User $user): array
     {
-        $stats = $this->countyOutletStats($user, (int) $project->county_id);
+        $stats = $this->statsService->projectOutletStats($user, $project);
 
         $start = $project->start_date?->clone()->startOfDay()
             ?? $stats['period_start'];
@@ -101,25 +59,46 @@ class ProjectController extends Controller
             $end = $start->clone()->endOfDay();
         }
 
-        $wardUserCount = $project->relationLoaded('wardAssignments')
-            ? $project->wardAssignments->pluck('user_id')->unique()->count()
-            : $project->wardAssignments()->get()->pluck('user_id')->unique()->count();
-        $pivotCount = $project->relationLoaded('assignedWorkers')
-            ? $project->assignedWorkers->count()
-            : $project->assignedWorkers()->count();
+        $fwCount = $project->relationLoaded('projectFieldWorkers')
+            ? $project->projectFieldWorkers->where('status', 'active')->pluck('field_worker_id')->unique()->count()
+            : $project->projectFieldWorkers()->where('status', 'active')->distinct('field_worker_id')->count('field_worker_id');
+
+        if ($fwCount === 0) {
+            $wardUserCount = $project->relationLoaded('wardAssignments')
+                ? $project->wardAssignments->pluck('user_id')->unique()->count()
+                : $project->wardAssignments()->get()->pluck('user_id')->unique()->count();
+            $pivotCount = $project->relationLoaded('assignedWorkers')
+                ? $project->assignedWorkers->count()
+                : $project->assignedWorkers()->count();
+            $fwCount = $wardUserCount > 0 ? $wardUserCount : $pivotCount;
+        }
+
+        $coverageCounties = $project->relationLoaded('coverages')
+            ? $project->coverages->pluck('county.name')->unique()->filter()->values()->all()
+            : ProjectCoverage::query()->where('project_id', $project->id)->with('county')->get()->pluck('county.name')->unique()->filter()->values()->all();
+
+        if ($coverageCounties === [] && $project->county) {
+            $coverageCounties = [$project->county->name];
+        }
 
         return [
             'id' => (string) $project->id,
-            'county_id' => (int) $project->county_id,
+            'branch_id' => $project->branch_id ? (string) $project->branch_id : null,
+            'county_id' => $project->county_id ? (int) $project->county_id : null,
             'name' => $project->name,
-            'county' => $project->county->name,
+            'branch' => $project->branch?->name ?? '',
+            'county' => $project->county?->name ?? '',
+            'coverage' => implode(', ', $coverageCounties),
+            'coverage_counties' => $coverageCounties,
             'status' => $this->labelStatus($project->status),
             'period_start' => $start->toIso8601String(),
             'period_end' => $end->toIso8601String(),
             'outlets_collected' => $stats['total'],
-            'field_workers' => $wardUserCount > 0 ? $wardUserCount : $pivotCount,
-            'progress' => $stats['progress'],
+            'submissions' => $stats['total'],
+            'field_workers' => $fwCount,
             'description' => $project->description,
+            'manager_id' => $project->manager_id ? (string) $project->manager_id : null,
+            'questionnaire_id' => $project->questionnaire_id ? (string) $project->questionnaire_id : null,
         ];
     }
 
@@ -131,7 +110,7 @@ class ProjectController extends Controller
         $user = $request->user();
         $user->loadMissing('role');
 
-        $query = Project::query()->with(['county', 'assignedWorkers', 'wardAssignments']);
+        $query = Project::query()->with(['county', 'branch', 'assignedWorkers', 'wardAssignments', 'coverages.county', 'projectFieldWorkers']);
 
         if ($user->role?->slug === 'super_admin') {
             if ($request->filled('company_id')) {
@@ -149,6 +128,35 @@ class ProjectController extends Controller
             });
         } else {
             $query->where('company_id', $user->company_id);
+        }
+
+        if ($request->filled('branch_id')) {
+            $query->where('branch_id', (int) $request->query('branch_id'));
+        }
+        if ($request->filled('county_id')) {
+            $query->where(function (Builder $q) use ($request): void {
+                $q->where('county_id', (int) $request->query('county_id'))
+                    ->orWhereHas('coverages', fn (Builder $c) => $c->where('county_id', (int) $request->query('county_id')));
+            });
+        }
+        if ($request->filled('status')) {
+            $query->where('status', strtolower($request->string('status')->toString()));
+        }
+        if ($request->filled('manager_id')) {
+            $query->where('manager_id', (int) $request->query('manager_id'));
+        }
+        if ($request->filled('from')) {
+            $query->whereDate('start_date', '>=', $request->date('from')->format('Y-m-d'));
+        }
+        if ($request->filled('to')) {
+            $query->whereDate('end_date', '<=', $request->date('to')->format('Y-m-d'));
+        }
+        if ($request->filled('search')) {
+            $search = '%'.$request->string('search').'%';
+            $query->where(function (Builder $q) use ($search): void {
+                $q->where('name', 'like', $search)
+                    ->orWhereHas('branch', fn (Builder $b) => $b->where('name', 'like', $search));
+            });
         }
 
         $rows = $query->orderBy('name')->get()->map(
@@ -192,16 +200,23 @@ class ProjectController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'county_id' => 'required|exists:counties,id',
+            'branch_id' => 'nullable|exists:branches,id',
+            'county_id' => 'nullable|exists:counties,id',
             'description' => 'nullable|string',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
             'status' => 'required|string|in:draft,active,paused,completed',
+            'manager_id' => 'nullable|exists:users,id',
+            'questionnaire_id' => 'nullable|exists:questionnaires,id',
             'field_worker_ids' => 'nullable|array',
             'field_worker_ids.*' => 'integer|exists:users,id',
             'ward_assignments' => 'nullable|array',
             'ward_assignments.*.ward_id' => 'required|integer|exists:wards,id',
             'ward_assignments.*.user_id' => 'required|integer|exists:users,id',
+            'coverages' => 'nullable|array',
+            'coverages.*.county_id' => 'required|integer|exists:counties,id',
+            'coverages.*.ward_id' => 'required|integer|exists:wards,id',
+            'coverages.*.target_outlets' => 'nullable|integer|min:0',
             'company_id' => 'nullable|exists:companies,id',
         ]);
 
@@ -217,16 +232,27 @@ class ProjectController extends Controller
 
         $project = Project::query()->create([
             'company_id' => $companyId,
-            'county_id' => $validated['county_id'],
+            'branch_id' => $validated['branch_id'] ?? null,
+            'county_id' => $validated['county_id'] ?? null,
             'name' => $validated['name'],
             'description' => $validated['description'] ?? null,
             'status' => $validated['status'],
             'start_date' => $validated['start_date'] ?? null,
             'end_date' => $validated['end_date'] ?? null,
             'created_by' => $user->id,
+            'manager_id' => $validated['manager_id'] ?? $user->id,
+            'questionnaire_id' => $validated['questionnaire_id'] ?? null,
         ]);
 
-        $project->load(['county', 'assignedWorkers']);
+        if (! empty($validated['coverages']) && ! empty($validated['branch_id'])) {
+            $this->coverageValidator->validateAndSyncProjectCoverage(
+                $project,
+                (int) $validated['branch_id'],
+                $validated['coverages'],
+            );
+        }
+
+        $project->load(['county', 'branch', 'assignedWorkers', 'coverages']);
 
         if (array_key_exists('ward_assignments', $validated)) {
             $this->replaceWardAssignments($project, $validated['ward_assignments'] ?? [], $user);
@@ -258,10 +284,12 @@ class ProjectController extends Controller
         $user = $request->user();
         $user->loadMissing('role');
 
-        $project->load(['county', 'assignedWorkers', 'wardAssignments.user', 'wardAssignments.ward']);
-        $project->county->load(['wards' => fn ($q) => $q->orderBy('name')]);
+        $project->load(['county', 'branch', 'questionnaire', 'manager', 'assignedWorkers', 'wardAssignments.user', 'wardAssignments.ward', 'coverages.county', 'coverages.ward']);
+        if ($project->county) {
+            $project->county->load(['wards' => fn ($q) => $q->orderBy('name')]);
+        }
 
-        $stats = $this->countyOutletStats($user, (int) $project->county_id);
+        $stats = $this->statsService->projectOutletStats($user, $project);
 
         $start = $project->start_date?->clone()->startOfDay()
             ?? $stats['period_start'];
@@ -278,31 +306,45 @@ class ProjectController extends Controller
         }
 
         $assignByWard = $project->wardAssignments->keyBy('ward_id');
-        $wardsPayload = $project->county->wards->map(function (Ward $w) use ($assignByWard): array {
-            $a = $assignByWard->get($w->id);
+        $wardsPayload = $project->coverages->isNotEmpty()
+            ? $project->coverages->map(fn ($c) => [
+                'id' => $c->ward_id,
+                'name' => $c->ward?->name ?? '',
+                'county_id' => $c->county_id,
+                'county_name' => $c->county?->name ?? '',
+                'target_outlets' => $c->target_outlets,
+                'assigned_user_id' => $assignByWard->get($c->ward_id) ? (int) $assignByWard->get($c->ward_id)->user_id : null,
+                'assigned_user_name' => $assignByWard->get($c->ward_id)?->user?->name,
+            ])->values()->all()
+            : ($project->county?->wards->map(function (Ward $w) use ($assignByWard): array {
+                $a = $assignByWard->get($w->id);
 
-            return [
-                'id' => $w->id,
-                'name' => $w->name,
-                'assigned_user_id' => $a ? (int) $a->user_id : null,
-                'assigned_user_name' => $a?->user?->name,
-            ];
-        })->values()->all();
+                return [
+                    'id' => $w->id,
+                    'name' => $w->name,
+                    'assigned_user_id' => $a ? (int) $a->user_id : null,
+                    'assigned_user_name' => $a?->user?->name,
+                ];
+            })->values()->all() ?? []);
 
         $wardUserCount = $project->wardAssignments->pluck('user_id')->unique()->count();
 
         return response()->json([
             'project' => [
                 'id' => (string) $project->id,
+                'branch_id' => $project->branch_id ? (string) $project->branch_id : null,
                 'county_id' => $project->county_id,
                 'name' => $project->name,
                 'description' => $project->description,
-                'county' => $project->county->name,
+                'branch' => $project->branch?->name ?? '',
+                'county' => $project->county?->name ?? '',
+                'questionnaire_id' => $project->questionnaire_id ? (string) $project->questionnaire_id : null,
+                'questionnaire' => $project->questionnaire?->name,
+                'manager_id' => $project->manager_id ? (string) $project->manager_id : null,
                 'status' => $this->labelStatus($project->status),
                 'period_start' => $start->toIso8601String(),
                 'period_end' => $end->toIso8601String(),
                 'outlets_collected' => $stats['total'],
-                'progress' => $stats['progress'],
                 'field_workers' => $wardUserCount > 0 ? $wardUserCount : $project->assignedWorkers->count(),
                 'start_date' => $project->start_date?->toDateString(),
                 'end_date' => $project->end_date?->toDateString(),
@@ -329,11 +371,14 @@ class ProjectController extends Controller
 
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
+            'branch_id' => 'nullable|exists:branches,id',
             'county_id' => 'sometimes|exists:counties,id',
             'description' => 'nullable|string',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
             'status' => 'sometimes|string|in:draft,active,paused,completed',
+            'manager_id' => 'nullable|exists:users,id',
+            'questionnaire_id' => 'nullable|exists:questionnaires,id',
             'field_worker_ids' => 'nullable|array',
             'field_worker_ids.*' => 'integer|exists:users,id',
             'ward_assignments' => 'nullable|array',
@@ -466,7 +511,7 @@ class ProjectController extends Controller
         }
 
         $q = Project::query()
-            ->with(['county'])
+            ->with(['county', 'branch', 'coverages.county', 'coverages.ward'])
             ->whereIn('status', ['draft', 'active', 'paused', 'completed'])
             ->where(function (Builder $scope) use ($user): void {
                 $scope->whereHas(
@@ -475,6 +520,9 @@ class ProjectController extends Controller
                 )->orWhereHas(
                     'assignedWorkers',
                     fn (Builder $rel) => $rel->whereKey($user->id),
+                )->orWhereHas(
+                    'projectFieldWorkers',
+                    fn (Builder $pfw) => $pfw->where('field_worker_id', $user->id)->where('status', 'active'),
                 );
             });
 
@@ -483,6 +531,14 @@ class ProjectController extends Controller
         }
 
         $projects = $q->orderBy('name')->get()->map(function (Project $p) use ($user): array {
+            $workerWardIds = ProjectFieldWorker::query()
+                ->where('project_id', $p->id)
+                ->where('field_worker_id', $user->id)
+                ->where('status', 'active')
+                ->pluck('ward_id')
+                ->filter()
+                ->all();
+
             $wards = ProjectWardAssignment::query()
                 ->where('project_id', $p->id)
                 ->where('user_id', $user->id)
@@ -492,14 +548,42 @@ class ProjectController extends Controller
                 ->map(fn (ProjectWardAssignment $a): array => [
                     'id' => $a->ward_id,
                     'name' => $a->ward?->name ?? '',
-                ])->values()->all();
+                    'county_id' => $a->ward?->county_id,
+                ]);
+
+            if ($wards->isEmpty() && $p->coverages->isNotEmpty()) {
+                $coverages = $p->coverages;
+                if ($workerWardIds !== []) {
+                    $coverages = $coverages->whereIn('ward_id', $workerWardIds);
+                }
+                $wards = $coverages->map(fn ($c) => [
+                    'id' => $c->ward_id,
+                    'name' => $c->ward?->name ?? '',
+                    'county_id' => $c->county_id,
+                ]);
+            }
+
+            $counties = $p->coverages->groupBy('county_id')->map(function ($items, $countyId) {
+                return [
+                    'id' => (int) $countyId,
+                    'name' => $items->first()?->county?->name ?? '',
+                    'wards' => $items->map(fn ($c) => [
+                        'id' => (int) $c->ward_id,
+                        'name' => $c->ward?->name ?? '',
+                    ])->values()->all(),
+                ];
+            })->values()->all();
 
             return [
                 'id' => (string) $p->id,
                 'name' => $p->name,
+                'branch' => $p->branch?->name ?? '',
+                'branch_id' => $p->branch_id ? (string) $p->branch_id : null,
                 'county' => $p->county?->name ?? '',
                 'status' => $p->status,
-                'wards' => $wards,
+                'questionnaire_id' => $p->questionnaire_id ? (string) $p->questionnaire_id : null,
+                'wards' => $wards->unique('id')->values()->all(),
+                'counties' => $counties,
             ];
         });
 
@@ -557,6 +641,14 @@ class ProjectController extends Controller
         $userIds = array_values(array_unique(array_map(fn (array $r): int => (int) $r['user_id'], $rows)));
         $this->assertFieldCollectorsForCompany($userIds, $companyId);
 
+        $previousUserIds = ProjectWardAssignment::query()
+            ->where('project_id', $project->id)
+            ->pluck('user_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
         DB::transaction(function () use ($project, $rows, $actor): void {
             ProjectWardAssignment::query()->where('project_id', $project->id)->delete();
             $now = now();
@@ -571,6 +663,12 @@ class ProjectController extends Controller
             }
             $this->syncProjectUsersFromWardAssignments($project, $actor);
         });
+
+        app(CollectorNotificationService::class)->notifyNewlyAssignedCollectors(
+            $project,
+            $previousUserIds,
+            $userIds,
+        );
 
         $project->unsetRelation('wardAssignments');
         $project->unsetRelation('assignedWorkers');

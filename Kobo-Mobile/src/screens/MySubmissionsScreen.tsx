@@ -29,6 +29,8 @@ import {
   sortAssignmentsForDisplay,
 } from "../utils/fieldWorkerProjects";
 import { outletListRowToSubmitted } from "../utils/outletApiMap";
+import { getSubmissionStatus } from "../utils/submissionStatus";
+
 function formatSubmittedAt(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
@@ -38,34 +40,17 @@ function submissionStatusUi(item: SubmittedOutlet): {
   pillStyle: object | undefined;
   textStyle: object | undefined;
 } {
-  if (item.syncStatus === "pending") {
-    return {
-      label: "Waiting to sync",
-      pillStyle: styles.statusPillPending,
-      textStyle: styles.statusTextPending,
-    };
-  }
-  switch (item.serverReviewStatus) {
+  const { label, variant } = getSubmissionStatus(item);
+  switch (variant) {
+    case "pending_sync":
+      return { label, pillStyle: styles.statusPillPending, textStyle: styles.statusTextPending };
     case "approved":
-      return {
-        label: "Approved",
-        pillStyle: styles.statusPillApproved,
-        textStyle: styles.statusTextApproved,
-      };
+      return { label, pillStyle: styles.statusPillApproved, textStyle: styles.statusTextApproved };
     case "rejected":
-      return {
-        label: "Rejected",
-        pillStyle: styles.statusPillRejected,
-        textStyle: styles.statusTextRejected,
-      };
-    case "pending":
-      return {
-        label: "Under review",
-        pillStyle: styles.statusPillReview,
-        textStyle: styles.statusTextReview,
-      };
+      return { label, pillStyle: styles.statusPillRejected, textStyle: styles.statusTextRejected };
+    case "submitted":
     default:
-      return { label: "Submitted", pillStyle: undefined, textStyle: undefined };
+      return { label, pillStyle: undefined, textStyle: undefined };
   }
 }
 
@@ -383,12 +368,10 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   statusPillPending: { backgroundColor: "#FEF3C7" },
-  statusPillReview: { backgroundColor: "#FFFBEB" },
   statusPillApproved: { backgroundColor: "#D1FAE5" },
   statusPillRejected: { backgroundColor: "#FFE4E6" },
   statusText: { color: "#12914A", fontSize: 12, fontFamily: font.semiBold },
   statusTextPending: { color: "#B45309" },
-  statusTextReview: { color: "#B45309" },
   statusTextApproved: { color: "#047857" },
   statusTextRejected: { color: "#BE123C" },
   dateText: { fontSize: 12, color: "#64748B", fontFamily: font.regular },

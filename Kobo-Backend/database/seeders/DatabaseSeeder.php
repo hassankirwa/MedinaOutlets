@@ -34,6 +34,7 @@ class DatabaseSeeder extends Seeder
         }
 
         $this->call(KenyaCountiesAndWardsSeeder::class);
+        $this->call(QuestionnaireSeeder::class);
 
         $company = Company::query()->updateOrCreate(
             ['code' => 'MEDINA-DEMO'],

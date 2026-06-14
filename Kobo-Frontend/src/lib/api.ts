@@ -258,6 +258,11 @@ export async function logoutRequest(): Promise<void> {
 
 export type DashboardStats = {
   totalOutlets: number;
+  totalProjects?: number;
+  activeProjects?: number;
+  totalBranches?: number;
+  pendingReviews?: number;
+  submissionsByBranch?: Record<string, number>;
   countiesCovered: number;
   fieldWorkers: number;
   submissionsToday: number;
@@ -272,13 +277,21 @@ export type DashboardStats = {
   submissionTrends: { date: string; outlets: number }[];
 };
 
-export async function fetchDashboardStats(): Promise<DashboardStats> {
-  const res = await apiFetch("/api/dashboard/stats");
+export async function fetchDashboardStats(params?: { branch_id?: number }): Promise<DashboardStats> {
+  const q = params?.branch_id ? `?branch_id=${params.branch_id}` : "";
+  const res = await apiFetch(`/api/dashboard/stats${q}`);
   return readJsonResponse<DashboardStats>(res, "Failed to load dashboard");
 }
 
-export async function fetchOutletsApi(): Promise<ApiOutletRow[]> {
-  const res = await apiFetch("/api/outlets");
+export async function fetchOutletsApi(params?: Record<string, string | number | boolean | undefined>): Promise<ApiOutletRow[]> {
+  const q = new URLSearchParams();
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== "") q.set(k, String(v));
+    }
+  }
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  const res = await apiFetch(`/api/outlets${suffix}`);
   const data = await readJsonResponse<{ data?: ApiOutletRow[] }>(res, "Failed to load outlets");
   if (typeof data === "object" && data !== null && Array.isArray(data.data)) {
     return data.data;
@@ -343,6 +356,18 @@ export async function bulkUpdateOutletStatuses(
     return data.data;
   }
   return [];
+}
+
+export async function bulkDeleteOutlets(
+  outletIds: (string | number)[],
+): Promise<{ deleted: number; outlet_ids: number[] }> {
+  const res = await apiFetch("/api/outlets/bulk-delete", {
+    method: "POST",
+    body: JSON.stringify({
+      outlet_ids: outletIds.map((id) => Number(id)),
+    }),
+  });
+  return readJsonResponse(res, "Failed to delete submissions");
 }
 
 export type OutletImportResult = {
@@ -428,16 +453,45 @@ export type ProjectsSummary = {
 
 export type ProjectRowApi = {
   id: string;
-  county_id: number;
+  branch_id?: string | null;
+  county_id?: number | null;
   name: string;
+  branch?: string;
   county: string;
+  coverage?: string;
+  coverage_counties?: string[];
   status: "Active" | "Completed" | "Paused" | "Draft";
   period_start: string;
   period_end: string;
   outlets_collected: number;
+  submissions?: number;
   field_workers: number;
-  progress: number;
   description?: string | null;
+  manager_id?: string | null;
+  questionnaire_id?: string | null;
+};
+
+export type BranchApiRow = {
+  id: string;
+  name: string;
+  code: string | null;
+  region: string | null;
+  manager_name: string | null;
+  manager_phone: string | null;
+  status: string;
+  counties_count?: number;
+  wards_count?: number;
+  coverage_counties?: string[];
+  coverage?: Array<{ id: number; name: string; wards: Array<{ id: number; name: string }> }>;
+};
+
+export type QuestionnaireApiRow = {
+  id: string;
+  name: string;
+  description?: string | null;
+  status: string;
+  schema_json?: unknown;
+  created_at?: string;
 };
 
 export type CountyApiRow = {
@@ -475,16 +529,25 @@ export type ProjectWriteStatus = "draft" | "active" | "paused" | "completed";
 
 export type WardAssignmentInput = { ward_id: number; user_id: number };
 
+export type ProjectCoverageInput = {
+  county_id: number;
+  ward_id: number;
+  target_outlets?: number | null;
+};
+
 export type CreateProjectBody = {
   name: string;
-  county_id: number;
+  branch_id?: number | null;
+  county_id?: number | null;
   description?: string | null;
   start_date?: string | null;
   end_date?: string | null;
   status: ProjectWriteStatus;
+  manager_id?: number | null;
+  questionnaire_id?: number | null;
   field_worker_ids?: number[];
-  /** When set (including []), replaces ward→collector mapping and syncs project membership from these picks. */
   ward_assignments?: WardAssignmentInput[];
+  coverages?: ProjectCoverageInput[];
   company_id?: number;
 };
 
@@ -512,11 +575,30 @@ export async function deleteProject(projectId: string | number): Promise<void> {
   await readJsonResponse<{ ok?: boolean }>(res, "Failed to delete project");
 }
 
-export async function fetchProjects(): Promise<{
+export type ProjectListFilters = {
+  branch_id?: number;
+  county_id?: number;
+  status?: string;
+  manager_id?: number;
+  from?: string;
+  to?: string;
+  search?: string;
+};
+
+export async function fetchProjects(filters?: ProjectListFilters): Promise<{
   summary: ProjectsSummary;
   projects: ProjectRowApi[];
 }> {
-  const res = await apiFetch("/api/projects");
+  const q = new URLSearchParams();
+  if (filters?.branch_id) q.set("branch_id", String(filters.branch_id));
+  if (filters?.county_id) q.set("county_id", String(filters.county_id));
+  if (filters?.status) q.set("status", filters.status);
+  if (filters?.manager_id) q.set("manager_id", String(filters.manager_id));
+  if (filters?.from) q.set("from", filters.from);
+  if (filters?.to) q.set("to", filters.to);
+  if (filters?.search) q.set("search", filters.search);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  const res = await apiFetch(`/api/projects${suffix}`);
   return readJsonResponse(res, "Failed to load projects");
 }
 
@@ -535,6 +617,8 @@ export type FieldWorkerRowApi = {
   phone: string;
   email: string;
   county: string;
+  branch?: string;
+  assigned_branches?: string[];
   projects: number;
   outlets_collected: number;
   this_month: number;
@@ -542,11 +626,12 @@ export type FieldWorkerRowApi = {
   avatar: string;
 };
 
-export async function fetchFieldWorkers(): Promise<{
+export async function fetchFieldWorkers(params?: { branch_id?: number }): Promise<{
   summary: FieldWorkersSummary;
   workers: FieldWorkerRowApi[];
 }> {
-  const res = await apiFetch("/api/field-workers");
+  const q = params?.branch_id ? `?branch_id=${params.branch_id}` : "";
+  const res = await apiFetch(`/api/field-workers${q}`);
   return readJsonResponse(res, "Failed to load field workers");
 }
 
@@ -563,6 +648,7 @@ export type CreateFieldWorkerBody = {
   email: string;
   phone: string;
   county_id?: number | null;
+  branch_ids?: number[];
   company_id?: number;
 };
 
@@ -584,6 +670,7 @@ export type UpdateFieldWorkerBody = {
   email?: string;
   phone?: string;
   county_id?: number | null;
+  branch_ids?: number[];
   account_status?: "active" | "inactive" | "suspended";
 };
 
@@ -708,15 +795,19 @@ export type ProjectWardRowApi = {
 export type ProjectDetailPayload = {
   project: {
     id: string;
-    county_id: number;
+    branch_id?: string | null;
+    county_id?: number | null;
     name: string;
     description?: string | null;
+    branch?: string;
     county: string;
+    questionnaire_id?: string | null;
+    questionnaire?: string | null;
+    manager_id?: string | null;
     status: "Active" | "Completed" | "Paused" | "Draft";
     period_start: string;
     period_end: string;
     outlets_collected: number;
-    progress: number;
     field_workers: number;
     start_date?: string | null;
     end_date?: string | null;
@@ -913,3 +1004,178 @@ export async function clearAllNotifications(): Promise<void> {
   });
   await readJsonResponse(res, "Failed to clear notifications");
 }
+
+export async function fetchBranches(params?: { search?: string; status?: string }): Promise<{
+  branches: BranchApiRow[];
+}> {
+  const q = new URLSearchParams();
+  if (params?.search) q.set("search", params.search);
+  if (params?.status) q.set("status", params.status);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  const res = await apiFetch(`/api/branches${suffix}`);
+  return readJsonResponse(res, "Failed to load branches");
+}
+
+export async function fetchBranchDetail(branchId: string | number): Promise<{ branch: BranchApiRow }> {
+  const res = await apiFetch(`/api/branches/${branchId}`);
+  return readJsonResponse(res, "Failed to load branch");
+}
+
+export type BranchCoverageInput = { county_id: number; ward_ids: number[] };
+
+export async function createBranch(body: {
+  name: string;
+  code?: string | null;
+  region?: string | null;
+  manager_name?: string | null;
+  manager_phone?: string | null;
+  status: "active" | "inactive";
+  coverage?: BranchCoverageInput[];
+}): Promise<{ branch: BranchApiRow }> {
+  const res = await apiFetch("/api/branches", { method: "POST", body: JSON.stringify(body) });
+  return readJsonResponse(res, "Failed to create branch");
+}
+
+export async function updateBranch(
+  branchId: string | number,
+  body: Partial<Parameters<typeof createBranch>[0]>,
+): Promise<{ branch: BranchApiRow }> {
+  const res = await apiFetch(`/api/branches/${branchId}`, { method: "PATCH", body: JSON.stringify(body) });
+  return readJsonResponse(res, "Failed to update branch");
+}
+
+export async function deleteBranch(branchId: string | number): Promise<void> {
+  const res = await apiFetch(`/api/branches/${branchId}`, { method: "DELETE" });
+  await readJsonResponse(res, "Failed to delete branch");
+}
+
+export async function fetchBranchCounties(branchId: string | number): Promise<{
+  counties: Array<{ id: number; name: string; wards: Array<{ id: number; name: string }> }>;
+}> {
+  const res = await apiFetch(`/api/branches/${branchId}/counties`);
+  return readJsonResponse(res, "Failed to load branch counties");
+}
+
+export async function fetchQuestionnaires(): Promise<{ questionnaires: QuestionnaireApiRow[] }> {
+  const res = await apiFetch("/api/questionnaires");
+  return readJsonResponse(res, "Failed to load questionnaires");
+}
+
+export async function fetchQuestionnaireDetail(id: string | number): Promise<{ questionnaire: QuestionnaireApiRow }> {
+  const res = await apiFetch(`/api/questionnaires/${id}`);
+  return readJsonResponse(res, "Failed to load questionnaire");
+}
+
+export async function fetchProjectSummary(projectId: string | number): Promise<{
+  summary: Record<string, number>;
+  header: Record<string, unknown>;
+}> {
+  const res = await apiFetch(`/api/projects/${projectId}/summary`);
+  return readJsonResponse(res, "Failed to load project summary");
+}
+
+export async function fetchProjectAnalytics(projectId: string | number): Promise<Record<string, unknown>> {
+  const res = await apiFetch(`/api/projects/${projectId}/analytics`);
+  return readJsonResponse(res, "Failed to load project analytics");
+}
+
+export async function fetchProjectCoverage(projectId: string | number): Promise<{
+  branch: { id: string; name: string } | null;
+  coverage: Array<{ county_id: number; county_name: string; wards: Array<{ ward_id: number; ward_name: string; target_outlets?: number | null }> }>;
+}> {
+  const res = await apiFetch(`/api/projects/${projectId}/coverage`);
+  return readJsonResponse(res, "Failed to load project coverage");
+}
+
+export async function syncProjectCoverage(
+  projectId: string | number,
+  body: { branch_id: number; coverages: ProjectCoverageInput[] },
+): Promise<unknown> {
+  const res = await apiFetch(`/api/projects/${projectId}/coverage`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+  return readJsonResponse(res, "Failed to save project coverage");
+}
+
+export async function fetchProjectFieldWorkers(projectId: string | number): Promise<{
+  field_workers: Array<Record<string, unknown>>;
+}> {
+  const res = await apiFetch(`/api/projects/${projectId}/field-workers`);
+  return readJsonResponse(res, "Failed to load project field workers");
+}
+
+export async function syncProjectFieldWorkers(
+  projectId: string | number,
+  assignments: Array<{
+    field_worker_id: number;
+    branch_id: number;
+    county_id?: number | null;
+    ward_id?: number | null;
+    supervisor_id?: number | null;
+    status?: string;
+  }>,
+): Promise<unknown> {
+  const res = await apiFetch(`/api/projects/${projectId}/field-workers`, {
+    method: "PUT",
+    body: JSON.stringify({ assignments }),
+  });
+  return readJsonResponse(res, "Failed to save field workers");
+}
+
+export async function publishProject(projectId: string | number): Promise<{ project: { id: string; status: string } }> {
+  const res = await apiFetch(`/api/projects/${projectId}/publish`, { method: "POST", body: "{}" });
+  return readJsonResponse(res, "Failed to publish project");
+}
+
+export async function fetchProjectOutlets(
+  projectId: string | number,
+  params?: Record<string, string | number | boolean | undefined>,
+): Promise<{ data: ApiOutletRow[] }> {
+  const q = new URLSearchParams();
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== "") q.set(k, String(v));
+    }
+  }
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  const res = await apiFetch(`/api/projects/${projectId}/outlets${suffix}`);
+  return readJsonResponse(res, "Failed to load project submissions");
+}
+
+export type ReportTypeRow = {
+  id: string;
+  type: string;
+  name: string;
+  format: string;
+  description?: string;
+};
+
+export type GeneratedReport = {
+  type: string;
+  title: string;
+  columns: [string, string];
+  rows: Array<{ label: string; value: number | string }>;
+  generated_at: string;
+  filters?: Record<string, unknown>;
+};
+
+export async function fetchReports(): Promise<{ reports: ReportTypeRow[] }> {
+  const res = await apiFetch("/api/reports");
+  return readJsonResponse(res, "Failed to load reports");
+}
+
+export async function generateReport(params: Record<string, string>): Promise<GeneratedReport> {
+  const q = new URLSearchParams(params);
+  const res = await apiFetch(`/api/reports/generate?${q.toString()}`);
+  return readJsonResponse(res, "Failed to generate report");
+}
+
+export async function downloadReportExport(
+  params: Record<string, string>,
+  fallbackFilename: string,
+): Promise<void> {
+  const q = new URLSearchParams(params);
+  await downloadOutletSpreadsheetBlob(`/api/reports/export?${q.toString()}`, fallbackFilename);
+}
+
