@@ -82,3 +82,10 @@ yarn-error.*
 # Faster uploads: uncomment if mobile EAS builds never need these siblings:
 Kobo-Backend/
 Kobo-Frontend/
+KoboDocs/
+downloaded_images2/
+Download-artifacts/
+Download-results/
+.claude/
+
+

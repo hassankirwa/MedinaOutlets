@@ -16,6 +16,7 @@ const DefaultIcon = L.icon({
 (L.Marker.prototype as any).options.icon = DefaultIcon;
 
 import type { OutletType } from "@/components/maps/outlet-map-data";
+import { FitMapToPoints, isValidGpsCoordinate, MapEmptyState } from "@/components/maps/map-utils";
 
 type MapPoint = {
   id: string;
@@ -24,14 +25,6 @@ type MapPoint = {
   lat: number;
   lng: number;
 };
-
-const MOCK_POINTS: MapPoint[] = [
-  { id: "p1", name: "Goodwill Chemist", type: "Pharmacy", lat: -1.286389, lng: 36.817223 },
-  { id: "p2", name: "Sunrise Dispensary", type: "Clinic / Dispensary", lat: -1.30061, lng: 36.7642 },
-  { id: "p3", name: "Agrovet Central", type: "Agrovet", lat: -1.2921, lng: 36.8219 },
-  { id: "p4", name: "Westlands Shop", type: "Shop", lat: -1.2673, lng: 36.8119 },
-  { id: "p5", name: "City Hospital", type: "Hospital", lat: -1.2831, lng: 36.8304 },
-];
 
 function colorForType(type: MapPoint["type"]) {
   switch (type) {
@@ -50,25 +43,38 @@ function colorForType(type: MapPoint["type"]) {
   }
 }
 
-export function OutletDistributionMap({ points: pointsProp }: { points?: MapPoint[] }) {
-  const points = pointsProp && pointsProp.length > 0 ? pointsProp : MOCK_POINTS;
-  const center: [number, number] =
-    points.length > 0 ? [points[0].lat, points[0].lng] : [-1.286389, 36.817223];
+export function OutletDistributionMap({ points }: { points?: MapPoint[] }) {
+  const gpsPoints = React.useMemo(
+    () => (points ?? []).filter((p) => isValidGpsCoordinate(p.lat, p.lng)),
+    [points],
+  );
+
+  if (gpsPoints.length === 0) {
+    return (
+      <div className="h-[220px] w-full min-[480px]:h-[280px] sm:h-[320px]">
+        <MapEmptyState message="No outlets with GPS coordinates yet." />
+      </div>
+    );
+  }
+
+  const initialCenter: [number, number] = [gpsPoints[0].lat, gpsPoints[0].lng];
 
   return (
     <div className="relative h-[220px] w-full overflow-hidden rounded-xl min-[480px]:h-[280px] sm:h-[320px]">
       <MapContainer
-        center={center}
-        zoom={11}
+        key={gpsPoints.map((p) => p.id).join(",")}
+        center={initialCenter}
+        zoom={12}
         scrollWheelZoom={false}
         className="h-full w-full"
       >
+        <FitMapToPoints points={gpsPoints} defaultZoom={13} />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {points.map((p) => (
+        {gpsPoints.map((p) => (
           <CircleMarker
             key={p.id}
             center={[p.lat, p.lng]}

@@ -8,6 +8,11 @@ import { NewOutletHeader } from "../components/NewOutletHeader";
 import { NewOutletStepBar } from "../components/NewOutletStepBar";
 import { useNewOutletDraft } from "../context/NewOutletDraftContext";
 import { font } from "../theme/fonts";
+import {
+  isValidKenyaLocalPhone,
+  phoneValidationMessage,
+  sanitizePhoneInput,
+} from "../utils/phoneValidation";
 
 export function NewOutletScreen2({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
   const insets = useSafeAreaInsets();
@@ -20,19 +25,31 @@ export function NewOutletScreen2({ onBack, onNext }: { onBack: () => void; onNex
     email,
   } = draft;
   const [businessPhoneError, setBusinessPhoneError] = useState(false);
+  const [alternativePhoneError, setAlternativePhoneError] = useState(false);
+
+  const businessPhoneValid = isValidKenyaLocalPhone(businessPhone);
+  const alternativePhoneValid =
+    alternativePhone.trim().length === 0 || isValidKenyaLocalPhone(alternativePhone);
 
   const canGoNext =
     facilityName.trim().length > 1 &&
     ownerName.trim().length > 1 &&
-    businessPhone.trim().length > 0;
+    businessPhoneValid &&
+    alternativePhoneValid;
 
   const handleNext = () => {
-    if (businessPhone.trim().length === 0) {
+    if (!businessPhoneValid) {
       setBusinessPhoneError(true);
-      Alert.alert("Required field", "Business / Office Line is required.");
+      Alert.alert("Invalid phone number", phoneValidationMessage);
+      return;
+    }
+    if (!alternativePhoneValid) {
+      setAlternativePhoneError(true);
+      Alert.alert("Invalid phone number", phoneValidationMessage);
       return;
     }
     setBusinessPhoneError(false);
+    setAlternativePhoneError(false);
     onNext();
   };
 
@@ -62,21 +79,31 @@ export function NewOutletScreen2({ onBack, onNext }: { onBack: () => void; onNex
           label="Business / Office Line"
           value={businessPhone}
           onChangeText={(t) => {
-            if (businessPhoneError && t.trim().length > 0) setBusinessPhoneError(false);
-            updateDraft({ businessPhone: t });
+            const sanitized = sanitizePhoneInput(t);
+            if (businessPhoneError && isValidKenyaLocalPhone(sanitized)) setBusinessPhoneError(false);
+            updateDraft({ businessPhone: sanitized });
           }}
           keyboardType="phone-pad"
           required
         />
         {businessPhoneError ? (
-          <Text style={styles.fieldError}>Business / Office Line is required.</Text>
+          <Text style={styles.fieldError}>{phoneValidationMessage}</Text>
         ) : null}
         <NewOutletInputField
           label="Alternative Phone"
           value={alternativePhone}
-          onChangeText={(t) => updateDraft({ alternativePhone: t })}
+          onChangeText={(t) => {
+            const sanitized = sanitizePhoneInput(t);
+            if (alternativePhoneError && (sanitized.length === 0 || isValidKenyaLocalPhone(sanitized))) {
+              setAlternativePhoneError(false);
+            }
+            updateDraft({ alternativePhone: sanitized });
+          }}
           keyboardType="phone-pad"
         />
+        {alternativePhoneError ? (
+          <Text style={styles.fieldError}>{phoneValidationMessage}</Text>
+        ) : null}
         <NewOutletInputField
           label="Email Address"
           value={email}

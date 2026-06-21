@@ -105,7 +105,7 @@ export function NewOutletScreen5({
       },
       {
         label: "Captured Address",
-        value: emptyLabel(draft.capturedAddress || draft.reverseGeocodedAddress),
+        value: emptyLabel(draft.capturedPlaceName),
         icon: <Ionicons name="map-outline" size={16} color="#169447" />,
       },
       {
@@ -114,7 +114,7 @@ export function NewOutletScreen5({
         icon: <Ionicons name="location-outline" size={16} color="#FB923C" />,
       },
       {
-        label: "Nearest Landmark",
+        label: "Nearest Known Landmark",
         value: emptyLabel(draft.landmark),
         icon: <Ionicons name="navigate-outline" size={16} color="#3B82F6" />,
       },

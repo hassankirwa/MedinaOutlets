@@ -5,6 +5,7 @@ import { WebView } from "react-native-webview";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { apiReverseGeocode } from "../api/client";
 import { NewOutletFormScreen } from "../components/NewOutletFormScreen";
+import { NewOutletInputField } from "../components/NewOutletFields";
 import { NewOutletFooterButtons } from "../components/NewOutletFooterButtons";
 import { NewOutletHeader } from "../components/NewOutletHeader";
 import { NewOutletStepBar } from "../components/NewOutletStepBar";
@@ -17,26 +18,49 @@ export function NewOutletScreen3({ onBack, onNext }: { onBack: () => void; onNex
   const { token } = useAuth();
   const { draft, updateDraft } = useNewOutletDraft();
   const {
+    physicalLocation,
     landmark,
     gps,
     accuracyMeters,
     latitude,
     longitude,
     gpsCapturedAt,
-    capturedAddress,
     road,
     suburb,
     capturedWard,
     capturedCounty,
     region,
     country,
-    reverseGeocodedAddress,
   } = draft;
   const [isCapturing, setIsCapturing] = useState(false);
   const [geocodeFailed, setGeocodeFailed] = useState(false);
+  const [physicalLocationError, setPhysicalLocationError] = useState(false);
+  const [landmarkError, setLandmarkError] = useState(false);
 
   const hasGps = gpsCapturedAt.trim().length > 0;
-  const canGoNext = hasGps;
+  const hasPhysicalLocation = physicalLocation.trim().length > 1;
+  const hasLandmark = landmark.trim().length > 1;
+  const canGoNext = hasGps && hasPhysicalLocation && hasLandmark;
+
+  const handleNext = () => {
+    if (!hasGps) {
+      Alert.alert("GPS required", "Capture GPS location before continuing.");
+      return;
+    }
+    if (!hasPhysicalLocation) {
+      setPhysicalLocationError(true);
+      Alert.alert("Required field", "Physical Location is required.");
+      return;
+    }
+    if (!hasLandmark) {
+      setLandmarkError(true);
+      Alert.alert("Required field", "Nearest Known Landmark is required.");
+      return;
+    }
+    setPhysicalLocationError(false);
+    setLandmarkError(false);
+    onNext();
+  };
 
   const captureCurrentLocation = async () => {
     try {
@@ -80,7 +104,7 @@ export function NewOutletScreen3({ onBack, onNext }: { onBack: () => void; onNex
           updates.capturedCounty = geocoded.captured_county ?? "";
           updates.region = geocoded.region ?? "";
           updates.country = geocoded.country ?? "";
-          if (geocoded.landmark) {
+          if (geocoded.landmark && draft.landmark.trim().length === 0) {
             updates.landmark = geocoded.landmark;
           }
           const summaryParts = [
@@ -90,7 +114,7 @@ export function NewOutletScreen3({ onBack, onNext }: { onBack: () => void; onNex
             geocoded.captured_ward,
             geocoded.captured_county,
           ].filter((p): p is string => Boolean(p && String(p).trim()));
-          if (summaryParts.length > 0) {
+          if (summaryParts.length > 0 && draft.physicalLocation.trim().length === 0) {
             updates.physicalLocation = summaryParts.join(", ");
           }
           geocodedOk = Boolean(
@@ -115,7 +139,6 @@ export function NewOutletScreen3({ onBack, onNext }: { onBack: () => void; onNex
   };
 
   const osmRows: { label: string; value: string }[] = [
-    { label: "Nearest Landmark", value: landmark },
     { label: "Road / Street", value: road },
     { label: "Area / Subcounty", value: suburb },
     { label: "Ward", value: capturedWard },
@@ -134,8 +157,8 @@ export function NewOutletScreen3({ onBack, onNext }: { onBack: () => void; onNex
       <NewOutletFormScreen contentContainerStyle={styles.content}>
         <Text style={styles.title}>Location Details</Text>
         <Text style={styles.subtitle}>
-          Capture GPS to detect the outlet location from OpenStreetMap. County and ward are derived from GPS, not
-          selected manually.
+          Capture GPS to auto-detect coordinates and OpenStreetMap details. You must also enter Physical Location and
+          Nearest Known Landmark manually.
         </Text>
 
         <Pressable
@@ -164,6 +187,32 @@ export function NewOutletScreen3({ onBack, onNext }: { onBack: () => void; onNex
           </Text>
         ) : null}
 
+        <NewOutletInputField
+          label="Physical Location"
+          value={physicalLocation}
+          onChangeText={(t) => {
+            if (physicalLocationError && t.trim().length > 1) setPhysicalLocationError(false);
+            updateDraft({ physicalLocation: t });
+          }}
+          required
+        />
+        {physicalLocationError ? (
+          <Text style={styles.fieldError}>Physical Location is required.</Text>
+        ) : null}
+
+        <NewOutletInputField
+          label="Nearest Known Landmark"
+          value={landmark}
+          onChangeText={(t) => {
+            if (landmarkError && t.trim().length > 1) setLandmarkError(false);
+            updateDraft({ landmark: t });
+          }}
+          required
+        />
+        {landmarkError ? (
+          <Text style={styles.fieldError}>Nearest Known Landmark is required.</Text>
+        ) : null}
+
         {hasGps && osmRows.length > 0 ? (
           <View style={styles.detectedCard}>
             <Text style={styles.detectedLabel}>OpenStreetMap Details</Text>
@@ -189,7 +238,7 @@ export function NewOutletScreen3({ onBack, onNext }: { onBack: () => void; onNex
           </View>
         ) : null}
       </NewOutletFormScreen>
-      <NewOutletFooterButtons onBack={onBack} onNext={onNext} nextDisabled={!canGoNext} />
+      <NewOutletFooterButtons onBack={onBack} onNext={handleNext} nextDisabled={!canGoNext} />
     </KeyboardAvoidingView>
   );
 }
@@ -211,6 +260,7 @@ const styles = StyleSheet.create({
   captureBtnText: { color: "#FFF", fontSize: 17, fontFamily: font.bold },
   hint: { color: "#64748B", fontSize: 15, fontFamily: font.semiBold },
   geocodeWarning: { color: "#B45309", fontSize: 14, fontFamily: font.regular, lineHeight: 20 },
+  fieldError: { color: "#DC2626", fontSize: 14, fontFamily: font.semiBold, marginTop: -8 },
   gpsCard: {
     backgroundColor: "#EFF6FF",
     borderRadius: 10,

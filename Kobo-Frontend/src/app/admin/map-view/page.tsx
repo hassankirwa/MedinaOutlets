@@ -26,7 +26,8 @@ import {
   fetchOutletsApi,
 } from "@/lib/api";
 import { apiOutletToPoint, type ApiOutletRow } from "@/lib/outletTransform";
-import { OUTLETS, type OutletPoint } from "@/components/maps/outlet-map-data";
+import type { OutletPoint } from "@/components/maps/outlet-map-data";
+import { isValidGpsCoordinate } from "@/components/maps/map-utils";
 
 const OutletMapViewMap = dynamic(
   () => import("@/components/maps/OutletMapViewMap").then((m) => m.OutletMapViewMap),
@@ -153,7 +154,7 @@ export default function MapViewPage() {
   const [outletDetails, setOutletDetails] = React.useState<ApiOutletRow[]>([]);
   const [selectedOutletId, setSelectedOutletId] = React.useState("");
   const [loading, setLoading] = React.useState(true);
-  const [usingMock, setUsingMock] = React.useState(false);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
   const [branchFilter, setBranchFilter] = React.useState("");
   const [branches, setBranches] = React.useState<Array<{ id: string; name: string }>>([]);
 
@@ -165,29 +166,24 @@ export default function MapViewPage() {
     let cancelled = false;
     void (async () => {
       setLoading(true);
+      setLoadError(null);
       try {
         const raw = await fetchOutletsApi(branchFilter ? { branch_id: branchFilter } : undefined);
         if (cancelled) {
           return;
         }
-        const pts = raw.map(apiOutletToPoint);
-        if (pts.length > 0) {
-          setOutlets(pts);
-          setOutletDetails(raw);
-          setSelectedOutletId(pts[0].id);
-          setUsingMock(false);
-        } else {
+        const pts = raw
+          .filter((r) => isValidGpsCoordinate(r.lat, r.lng))
+          .map(apiOutletToPoint);
+        setOutlets(pts);
+        setOutletDetails(raw.filter((r) => pts.some((p) => p.id === r.id)));
+        setSelectedOutletId(pts[0]?.id ?? "");
+      } catch (e) {
+        if (!cancelled) {
           setOutlets([]);
           setOutletDetails([]);
           setSelectedOutletId("");
-          setUsingMock(false);
-        }
-      } catch {
-        if (!cancelled) {
-          setOutlets(OUTLETS);
-          setOutletDetails([]);
-          setSelectedOutletId(OUTLETS[0].id);
-          setUsingMock(true);
+          setLoadError(e instanceof Error ? e.message : "Could not load outlets");
         }
       } finally {
         if (!cancelled) {
@@ -273,9 +269,9 @@ export default function MapViewPage() {
             })}
           </section>
 
-          {usingMock && !loading ? (
-            <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              Showing demo map data — API unavailable or no outlets returned.
+          {loadError && !loading ? (
+            <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+              {loadError}
             </p>
           ) : null}
 
@@ -301,7 +297,7 @@ export default function MapViewPage() {
                   />
                 ) : (
                   <aside className="flex min-h-[200px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white p-4 text-sm text-slate-500">
-                    No outlets to display.
+                    No outlets with GPS coordinates to display.
                   </aside>
                 )}
               </>

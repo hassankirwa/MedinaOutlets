@@ -42,6 +42,7 @@ import {
   categoryBlocksFromOutletRows,
   type ApiOutletRow,
 } from "@/lib/outletTransform";
+import { isValidGpsCoordinate } from "@/components/maps/map-utils";
 
 const COLORS = ["#2563eb", "#ec4899", "#f59e0b", "#22c55e", "#ef4444"];
 
@@ -280,13 +281,16 @@ export default function AdminDashboardPage() {
         }))
       : [];
 
-  const mapMiniPoints = outletPoints.slice(0, 40).map((o) => ({
-    id: o.id,
-    name: o.name,
-    type: o.type,
-    lat: o.lat,
-    lng: o.lng,
-  }));
+  const mapMiniPoints = outletPoints
+    .filter((o) => isValidGpsCoordinate(o.lat, o.lng))
+    .slice(0, 40)
+    .map((o) => ({
+      id: o.id,
+      name: o.name,
+      type: o.type,
+      lat: o.lat,
+      lng: o.lng,
+    }));
 
   return (
     <AdminShell>

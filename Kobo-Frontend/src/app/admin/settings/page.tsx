@@ -22,7 +22,6 @@ import {
   Bell,
   Building2,
   KeyRound,
-  MapPin,
   Menu,
   Save,
   Settings2,
@@ -82,12 +81,6 @@ const sections: Section[] = [
     label: "Workflow & Approvals",
     icon: Workflow,
     description: "Submission review path, SLA, and escalations.",
-  },
-  {
-    id: "map",
-    label: "Map & Location Defaults",
-    icon: MapPin,
-    description: "Default map center, zoom, and geofence checks.",
   },
 ];
 
@@ -190,7 +183,6 @@ export default function SettingsPage() {
     null,
   );
   const [workflow, setWorkflow] = React.useState<CompanyWorkspaceSettings["workflow_approvals"] | null>(null);
-  const [mapDefaults, setMapDefaults] = React.useState<CompanyWorkspaceSettings["map_defaults"] | null>(null);
   const [savingSection, setSavingSection] = React.useState<string | null>(null);
 
   const [currentPassword, setCurrentPassword] = React.useState("");
@@ -246,7 +238,6 @@ export default function SettingsPage() {
       setUsersRoles(c.settings.users_roles);
       setDataRules(c.settings.data_collection_rules);
       setWorkflow(c.settings.workflow_approvals);
-      setMapDefaults(c.settings.map_defaults);
     }
   }, [workspace]);
 
@@ -1038,79 +1029,6 @@ export default function SettingsPage() {
                       >
                         <Save size={14} />
                         {savingSection === "workflow" ? "Saving…" : "Save"}
-                      </button>
-                    </div>
-                  )}
-                </SettingsCard>
-              )}
-
-              {active === "map" && mapDefaults && (
-                <SettingsCard
-                  title="Map & Location Defaults"
-                  description="Set initial map behavior and coordinate quality options."
-                >
-                  <InputRow label="Default Map Center (lat, lng)">
-                    <input
-                      className={textInput()}
-                      disabled={!canEditOrg}
-                      value={`${mapDefaults.center_lat}, ${mapDefaults.center_lng}`}
-                      onChange={(e) => {
-                        const raw = e.target.value.split(",").map((s) => parseFloat(s.trim()));
-                        const lat = raw[0];
-                        const lng = raw[1];
-                        if (Number.isFinite(lat) && Number.isFinite(lng)) {
-                          setMapDefaults({
-                            ...mapDefaults,
-                            center_lat: lat,
-                            center_lng: lng,
-                          });
-                        }
-                      }}
-                    />
-                  </InputRow>
-                  <InputRow label="Default Zoom Level">
-                    <input
-                      type="number"
-                      min={1}
-                      max={22}
-                      className={textInput("max-w-[120px]")}
-                      disabled={!canEditOrg}
-                      value={mapDefaults.zoom}
-                      onChange={(e) =>
-                        setMapDefaults({
-                          ...mapDefaults,
-                          zoom: Number(e.target.value) || 11,
-                        })
-                      }
-                    />
-                  </InputRow>
-                  <label className="flex items-center gap-2 text-[13px] text-slate-700">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300"
-                      checked={mapDefaults.geofence_validation}
-                      onChange={(e) =>
-                        setMapDefaults({
-                          ...mapDefaults,
-                          geofence_validation: e.target.checked,
-                        })
-                      }
-                      disabled={!canEditOrg}
-                    />
-                    Enable geofence validation during data collection
-                  </label>
-                  {canEditOrg && (
-                    <div className="flex justify-end pt-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void patchCompanySection("map", { map_defaults: mapDefaults })
-                        }
-                        disabled={savingSection === "map"}
-                        className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-[12px] font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
-                      >
-                        <Save size={14} />
-                        {savingSection === "map" ? "Saving…" : "Save"}
                       </button>
                     </div>
                   )}

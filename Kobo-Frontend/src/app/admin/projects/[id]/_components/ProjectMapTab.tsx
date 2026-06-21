@@ -6,6 +6,7 @@ import Link from "next/link";
 import { fetchProjectOutlets } from "@/lib/api";
 import { apiOutletToPoint, type ApiOutletRow } from "@/lib/outletTransform";
 import type { OutletPoint } from "@/components/maps/outlet-map-data";
+import { isValidGpsCoordinate } from "@/components/maps/map-utils";
 
 const OutletMapViewMap = dynamic(
   () => import("@/components/maps/OutletMapViewMap").then((m) => m.OutletMapViewMap),
@@ -48,7 +49,9 @@ export function ProjectMapTab({ projectId }: { projectId: number }) {
     };
   }, [projectId, search, countyFilter, wardFilter, workerFilter]);
 
-  const outlets: OutletPoint[] = rows.filter((r) => r.lat && r.lng).map(apiOutletToPoint);
+  const outlets: OutletPoint[] = rows
+    .filter((r) => isValidGpsCoordinate(r.lat, r.lng))
+    .map(apiOutletToPoint);
   const selectedRow = rows.find((r) => r.id === selectedOutletId) ?? rows[0] ?? null;
   const workers = [...new Set(rows.map((r) => r.fieldWorker).filter(Boolean))];
   const counties = [...new Set(rows.map((r) => r.captured_county ?? r.county).filter(Boolean))];
