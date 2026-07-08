@@ -38,14 +38,17 @@ export default function NewProjectPage() {
   const [saving, setSaving] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
 
+  const [refDataError, setRefDataError] = React.useState<string | null>(null);
+
   React.useEffect(() => {
-    void Promise.all([fetchBranches(), fetchQuestionnaires(), fetchFieldWorkers()]).then(
-      ([b, q, w]) => {
-        setBranches(b.branches);
-        setQuestionnaires(q.questionnaires);
-        setWorkers(w.workers);
-      },
-    );
+    void (async () => {
+      const [b, q, w] = await Promise.allSettled([fetchBranches(), fetchQuestionnaires(), fetchFieldWorkers()]);
+      const failed: string[] = [];
+      if (b.status === "fulfilled") setBranches(b.value.branches); else failed.push("branches");
+      if (q.status === "fulfilled") setQuestionnaires(q.value.questionnaires); else failed.push("questionnaires");
+      if (w.status === "fulfilled") setWorkers(w.value.workers); else failed.push("field workers");
+      setRefDataError(failed.length ? `Could not load: ${failed.join(", ")}. Check your connection and reload.` : null);
+    })();
   }, []);
 
   const nextStep = async () => {
@@ -119,6 +122,9 @@ export default function NewProjectPage() {
           </div>
 
           <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+            {refDataError && (
+              <p className="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{refDataError}</p>
+            )}
             {step === 0 && (
               <div className="space-y-3">
                 <input className="w-full rounded-lg border px-3 py-2" placeholder="Project Name" value={name} onChange={(e) => setName(e.target.value)} />
@@ -143,10 +149,15 @@ export default function NewProjectPage() {
               </div>
             )}
             {step === 2 && (
-              <select className="w-full rounded-lg border px-3 py-2" value={questionnaireId} onChange={(e) => setQuestionnaireId(e.target.value)}>
-                <option value="">Select questionnaire template</option>
-                {questionnaires.map((q) => <option key={q.id} value={q.id}>{q.name}</option>)}
-              </select>
+              <div className="space-y-2">
+                <select className="w-full rounded-lg border px-3 py-2" value={questionnaireId} onChange={(e) => setQuestionnaireId(e.target.value)}>
+                  <option value="">{questionnaires.length === 0 ? "No questionnaires available" : "Select questionnaire template"}</option>
+                  {questionnaires.map((q) => <option key={q.id} value={q.id}>{q.name}</option>)}
+                </select>
+                {questionnaires.length === 0 && !refDataError && (
+                  <p className="text-xs text-amber-600">No active questionnaires exist yet. Create one (or set an existing one to “active”) before selecting it here.</p>
+                )}
+              </div>
             )}
             {step === 3 && (
               <div className="space-y-2 max-h-64 overflow-y-auto">

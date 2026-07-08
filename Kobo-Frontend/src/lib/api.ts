@@ -1098,8 +1098,19 @@ export async function syncProjectCoverage(
   return readJsonResponse(res, "Failed to save project coverage");
 }
 
+export type ProjectFieldWorkerRow = {
+  id: string;
+  field_worker_id: string;
+  name: string;
+  phone: string;
+  branch: string;
+  submissions: number;
+  last_sync?: string | null;
+  status: string;
+};
+
 export async function fetchProjectFieldWorkers(projectId: string | number): Promise<{
-  field_workers: Array<Record<string, unknown>>;
+  field_workers: ProjectFieldWorkerRow[];
 }> {
   const res = await apiFetch(`/api/projects/${projectId}/field-workers`);
   return readJsonResponse(res, "Failed to load project field workers");

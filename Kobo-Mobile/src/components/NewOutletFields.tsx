@@ -38,12 +38,15 @@ export function NewOutletSelectField({
   value,
   onPress,
   required = false,
+  placeholder = "Select...",
 }: {
   label: string;
   value: string;
   onPress: () => void;
   required?: boolean;
+  placeholder?: string;
 }) {
+  const isEmpty = !value;
   return (
     <View style={styles.field}>
       <Text style={styles.label}>
@@ -51,7 +54,7 @@ export function NewOutletSelectField({
         {required ? <Text style={styles.req}> *</Text> : null}
       </Text>
       <Pressable style={styles.select} onPress={onPress}>
-        <Text style={styles.selectText}>{value}</Text>
+        <Text style={isEmpty ? styles.selectPlaceholder : styles.selectText}>{isEmpty ? placeholder : value}</Text>
         <Ionicons name="chevron-down" size={18} color="#475569" />
       </Pressable>
     </View>
@@ -123,6 +126,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   selectText: { color: "#1F2937", fontSize: 16, fontFamily: font.regular },
+  selectPlaceholder: { color: "#94A3B8", fontSize: 16, fontFamily: font.regular },
   backdrop: { flex: 1, backgroundColor: "rgba(15,23,42,0.35)", justifyContent: "center", paddingHorizontal: 20 },
   modal: { maxHeight: "72%", backgroundColor: "#FFF", borderRadius: 14, padding: 14 },
   modalTitle: { fontSize: 18, fontFamily: font.bold, color: "#1E293B", marginBottom: 10 },

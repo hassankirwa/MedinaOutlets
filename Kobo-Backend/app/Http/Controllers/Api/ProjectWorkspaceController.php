@@ -192,6 +192,7 @@ class ProjectWorkspaceController extends Controller
 
                 return [
                     'id' => (string) $pfw->id,
+                    'field_worker_id' => (string) $pfw->field_worker_id,
                     'name' => $pfw->fieldWorker?->name ?? '',
                     'phone' => $pfw->fieldWorker?->phone ?? '',
                     'branch' => $pfw->branch?->name ?? '',

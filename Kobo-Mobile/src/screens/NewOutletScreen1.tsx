@@ -52,10 +52,9 @@ export function NewOutletScreen1({ onBack, onNext }: { onBack: () => void; onNex
         selected={typeOfAccount}
         onClose={() => setOpenDropdown(null)}
         onSelect={(v) => {
-          const next = categoryConfig[v];
           updateDraft({
             typeOfAccount: v,
-            selectedCategory: next ? next.options[0] : "",
+            selectedCategory: "",
           });
           setOpenDropdown(null);
         }}
