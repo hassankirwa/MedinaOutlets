@@ -43,7 +43,16 @@ export function attachNotificationResponseListener(): () => void {
   return () => detach?.();
 }
 
+let coldStartHandled = false;
+
 export async function handleColdStartNotification(): Promise<void> {
+  // getLastNotificationResponseAsync() is sticky (keeps returning the launch
+  // notification), so guard against replaying it more than once per launch.
+  if (coldStartHandled) {
+    return;
+  }
+  coldStartHandled = true;
+
   const Notifications = await getExpoNotifications();
   if (!Notifications) {
     return;

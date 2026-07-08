@@ -326,15 +326,34 @@ function AppContent() {
     [openSubmissionByOutletId],
   );
 
+  // Keep the latest payload handler in a ref so notification navigation always
+  // uses current logic without re-running the cold-start effect below.
+  const notificationPayloadHandlerRef = useRef(handleNotificationPayload);
   useEffect(() => {
-    setNotificationNavigationHandler(handleNotificationPayload);
+    notificationPayloadHandlerRef.current = handleNotificationPayload;
+  }, [handleNotificationPayload]);
+
+  useEffect(() => {
+    setNotificationNavigationHandler((payload) => notificationPayloadHandlerRef.current(payload));
     const detach = attachNotificationResponseListener();
-    void handleColdStartNotification();
     return () => {
       setNotificationNavigationHandler(null);
       detach();
     };
-  }, [handleNotificationPayload]);
+  }, []);
+
+  // Dispatch the launch notification exactly once, and only after auth is restored so
+  // deep links (e.g. into a specific submission) resolve with a valid token. Re-running
+  // this would be unsafe: getLastNotificationResponseAsync() is sticky and would replay
+  // the launch notification, bouncing the user to Notifications mid-navigation.
+  const coldStartDispatchedRef = useRef(false);
+  useEffect(() => {
+    if (coldStartDispatchedRef.current || !ready || !token || !user) {
+      return;
+    }
+    coldStartDispatchedRef.current = true;
+    void handleColdStartNotification();
+  }, [ready, token, user]);
 
   useEffect(() => {
     if (!token || !user) {
